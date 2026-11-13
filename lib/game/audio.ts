@@ -87,31 +87,106 @@ export class GameAudio {
     this.noiseBurst(2.8, 'lowpass', 900, 60, 0.55 * power, delay)
     this.noiseBurst(0.3, 'lowpass', 3000, 400, 0.3 * power, delay)
   }
+  private distortion(amount: number) {
+    const curve = new Float32Array(1024)
+    for (let i = 0; i < curve.length; i++) {
+      const x = (i / (curve.length - 1)) * 2 - 1
+      curve[i] = ((1 + amount) * x) / (1 + amount * Math.abs(x))
+    }
+    return curve
+  }
+
+  /** layered Demogorgon shriek: distorted throat growl, wet flutter, a piercing screech and ragged breath */
   roar() {
     const ctx = this.ctx
     if (!ctx) return
     const t = ctx.currentTime
-    const o = ctx.createOscillator()
-    o.type = 'sawtooth'
-    o.frequency.setValueAtTime(90, t)
-    o.frequency.linearRampToValueAtTime(140, t + 0.3)
-    o.frequency.exponentialRampToValueAtTime(55, t + 1.2)
+    const dur = 1.9
+    const out = ctx.createGain()
+    out.gain.setValueAtTime(0.001, t)
+    out.gain.exponentialRampToValueAtTime(0.9, t + 0.12)
+    out.gain.setValueAtTime(0.9, t + 0.9)
+    out.gain.exponentialRampToValueAtTime(0.001, t + dur)
+    out.connect(this.sfx)
+
+    const shaper = ctx.createWaveShaper()
+    shaper.curve = this.distortion(40)
+    shaper.oversample = '2x'
+    const formant = ctx.createBiquadFilter()
+    formant.type = 'bandpass'
+    formant.Q.value = 1.4
+    formant.frequency.setValueAtTime(380, t)
+    formant.frequency.linearRampToValueAtTime(950, t + 0.35)
+    formant.frequency.exponentialRampToValueAtTime(260, t + dur)
+    const flutter = ctx.createGain()
+    flutter.gain.value = 0.55
     const lfo = ctx.createOscillator()
-    lfo.frequency.value = 28
-    const lfoG = ctx.createGain()
-    lfoG.gain.value = 25
-    lfo.connect(lfoG)
-    lfoG.connect(o.frequency)
-    const g = ctx.createGain()
-    g.gain.setValueAtTime(0.001, t)
-    g.gain.linearRampToValueAtTime(0.35, t + 0.1)
-    g.gain.exponentialRampToValueAtTime(0.001, t + 1.3)
-    o.connect(g)
-    g.connect(this.sfx)
-    o.start(t)
-    lfo.start(t)
-    o.stop(t + 1.4)
-    lfo.stop(t + 1.4)
-    this.noiseBurst(1.1, 'bandpass', 800, 200, 0.3)
+    lfo.type = 'square'
+    lfo.frequency.setValueAtTime(22, t)
+    lfo.frequency.linearRampToValueAtTime(31, t + dur)
+    const lfoDepth = ctx.createGain()
+    lfoDepth.gain.value = 0.45
+    lfo.connect(lfoDepth)
+    lfoDepth.connect(flutter.gain)
+    shaper.connect(formant)
+    formant.connect(flutter)
+    flutter.connect(out)
+    const oscs: OscillatorNode[] = [lfo]
+    for (const [f, detune] of [
+      [68, 0],
+      [71, 14],
+      [102, -9],
+    ]) {
+      const o = ctx.createOscillator()
+      o.type = 'sawtooth'
+      o.detune.value = detune
+      o.frequency.setValueAtTime(f * 0.8, t)
+      o.frequency.linearRampToValueAtTime(f * 1.7, t + 0.3)
+      o.frequency.exponentialRampToValueAtTime(f * 0.6, t + dur)
+      const g = ctx.createGain()
+      g.gain.value = 0.35
+      o.connect(g)
+      g.connect(shaper)
+      oscs.push(o)
+    }
+
+    const screech = ctx.createOscillator()
+    screech.type = 'sawtooth'
+    screech.frequency.setValueAtTime(720, t + 0.1)
+    screech.frequency.linearRampToValueAtTime(1500, t + 0.45)
+    screech.frequency.exponentialRampToValueAtTime(520, t + 1.5)
+    const vib = ctx.createOscillator()
+    vib.frequency.value = 11
+    const vibDepth = ctx.createGain()
+    vibDepth.gain.value = 60
+    vib.connect(vibDepth)
+    vibDepth.connect(screech.frequency)
+    const screechF = ctx.createBiquadFilter()
+    screechF.type = 'bandpass'
+    screechF.frequency.value = 1800
+    screechF.Q.value = 3
+    const screechG = ctx.createGain()
+    screechG.gain.setValueAtTime(0.001, t)
+    screechG.gain.exponentialRampToValueAtTime(0.16, t + 0.3)
+    screechG.gain.exponentialRampToValueAtTime(0.001, t + 1.5)
+    screech.connect(screechF)
+    screechF.connect(screechG)
+    screechG.connect(out)
+    oscs.push(screech, vib)
+
+    for (const o of oscs) {
+      o.start(t)
+      o.stop(t + dur + 0.1)
+    }
+    this.noiseBurst(1.5, 'bandpass', 2400, 350, 0.32)
+    this.noiseBurst(1.8, 'lowpass', 500, 50, 0.5)
+  }
+
+  /** the rift tearing open around the runner: rising suction, then a deep boom */
+  portal() {
+    this.noiseBurst(0.9, 'bandpass', 180, 4200, 0.45)
+    this.noiseBurst(1.6, 'lowpass', 1400, 40, 0.6, 0.55)
+    this.tone('sine', 140, 28, 1.6, 0.55, 0.5)
+    this.tone('sawtooth', 55, 30, 1.2, 0.18, 0.5)
   }
 }

@@ -14,6 +14,7 @@ uniform float uKnee;
 uniform float uTuck;
 uniform float uArmDown;
 uniform float uElbow;
+uniform float uTwist;
 vec2 rot2(vec2 v, float a){ float c = cos(a); float s = sin(a); return vec2(c*v.x - s*v.y, s*v.x + c*v.y); }
 vec3 runDeform(vec3 p){
   float side = p.x >= 0.0 ? 1.0 : -1.0;
@@ -22,12 +23,14 @@ vec3 runDeform(vec3 p){
   if (armW > 0.0) {
     float elbowW = smoothstep(40.0, 47.0, ax) * armW;
     vec2 xz = vec2(p.x - side * 44.0, p.z);
-    xz = rot2(xz, side * uElbow * elbowW);
+    float armPh = sin(uPhase + (side > 0.0 ? 0.0 : 3.14159));
+    xz = rot2(xz, side * uElbow * (1.0 - 0.25 * armPh) * elbowW);
     p.x = side * 44.0 + xz.x; p.z = xz.y;
     vec2 sh = vec2(side * 17.0, 146.0);
     vec2 r = rot2(p.xy - sh, -side * uArmDown * armW);
     p.xy = sh + r;
     float swing = sin(uPhase + (side > 0.0 ? 0.0 : 3.14159)) * uArmAmp * armW;
+    swing *= swing < 0.0 ? 1.2 : 0.8;
     vec2 yz = rot2(vec2(p.y - 146.0, p.z), swing);
     p.y = 146.0 + yz.x; p.z = yz.y;
   }
@@ -36,10 +39,13 @@ vec3 runDeform(vec3 p){
     float s = clamp(p.x / 5.0, -1.0, 1.0) * 0.5 + 0.5;
     float phR = uPhase + 3.14159;
     float phL = uPhase;
-    float aR = sin(phR) * uLegAmp - uTuck;
-    float aL = sin(phL) * uLegAmp - uTuck;
-    float kR = max(0.0, -cos(phR)) * uKnee + uTuck * 1.8;
-    float kL = max(0.0, -cos(phL)) * uKnee + uTuck * 1.8;
+    // thighs reach further forward than they extend back, like a real stride
+    float sR = sin(phR); float sL = sin(phL);
+    float aR = sR * uLegAmp * (sR < 0.0 ? 1.2 : 0.8) - uTuck;
+    float aL = sL * uLegAmp * (sL < 0.0 ? 1.2 : 0.8) - uTuck;
+    // knee folds most during the forward swing, with a heel kick as the foot leaves the ground
+    float kR = (max(0.0, -cos(phR)) + max(0.0, sR) * 0.45) * uKnee + 0.08 + uTuck * 1.8;
+    float kL = (max(0.0, -cos(phL)) + max(0.0, sL) * 0.45) * uKnee + 0.08 + uTuck * 1.8;
     float a = mix(aL, aR, s);
     float k = mix(kL, kR, s);
     float kneeW = 1.0 - smoothstep(42.0, 54.0, p.y);
@@ -48,6 +54,13 @@ vec3 runDeform(vec3 p){
     yz = rot2(vec2(p.y - 90.0, p.z), a * legW);
     p.y = 90.0 + yz.x; p.z = yz.y;
   }
+  // pelvis rotates with the leading leg, shoulders counter-rotate, head stays steady
+  float tw = sin(uPhase) * uTwist;
+  float hipW = 1.0 - smoothstep(88.0, 112.0, p.y);
+  float chestW = smoothstep(100.0, 138.0, p.y) * (1.0 - smoothstep(148.0, 166.0, p.y));
+  float twist = tw * hipW - tw * 1.25 * chestW;
+  vec2 txz = rot2(vec2(p.x, p.z), twist);
+  p.x = txz.x; p.z = txz.y;
   return p;
 }
 `
@@ -65,7 +78,8 @@ export class Player {
     uKnee: { value: 1.3 },
     uTuck: { value: 0 },
     uArmDown: { value: 1.3 },
-    uElbow: { value: 1.2 },
+    uElbow: { value: 1.35 },
+    uTwist: { value: 0.16 },
   }
 
   constructor(shadowTex: THREE.Texture) {

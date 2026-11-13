@@ -8,7 +8,11 @@ import { GameAudio } from './audio'
 import { Input, type Action } from './input'
 import { haptic } from './telegram'
 import { makeDotTexture, makeShadowTexture } from './textures'
-import { ZONES, zoneBlendAt, zoneIndexAt } from './zones'
+import { ZONES } from './zones'
+import { Portal } from './portal'
+
+/** where along a new map's first segment its portal stands: just past the corner, before any obstacles */
+const PORTAL_S = HALF_W + 6
 
 export type GameState = 'loading' | 'menu' | 'playing' | 'paused' | 'dying' | 'over'
 
@@ -38,7 +42,7 @@ export interface EngineCallbacks {
   onToast: (text: string, tone?: 'red' | 'cyan' | 'gold') => void
   onProgress: (p: number) => void
   onResult: (r: GameResult) => void
-  onFlash: (kind: 'hit' | 'lightning', power: number) => void
+  onFlash: (kind: 'hit' | 'lightning' | 'portal', power: number) => void
 }
 
 const GRAVITY = 34
@@ -108,6 +112,12 @@ export class Engine {
   track!: Track
   player!: Player
   demo = new Demogorgon()
+  portal!: Portal
+  /** segment index hosting the next portal, -1 when none is placed */
+  portalSeg = -1
+  zoneFrom = 0
+  zoneTo = 0
+  zoneT = 1
   audio = new GameAudio()
   input: Input
   state: GameState = 'loading'
@@ -163,6 +173,8 @@ export class Engine {
     this.env.onFlash = (p) => this.cb.onFlash('lightning', p)
     this.assets = new Assets(dot)
     this.track = new Track(this.scene, this.assets)
+    this.portal = new Portal(this.assets.halo)
+    this.scene.add(this.portal.root)
     this.player = new Player(makeShadowTexture())
     this.scene.add(this.player.root)
     this.scene.add(this.demo.root)
@@ -180,7 +192,11 @@ export class Engine {
       ;(window as unknown as { __runner?: Engine }).__runner = this
     }
     this.loop(performance.now())
-    await this.player.load('/models/fashion_girl.glb', (p) => this.cb.onProgress(p))
+    await Promise.all([
+      this.player.load('/models/fashion_girl.glb', (p) => this.cb.onProgress(p)),
+      this.demo.load('/models/demogorgon.glb'),
+      this.portal.load('/models/portal.glb'),
+    ])
     // warm up shader compile so the first frame of play does not hitch
     this.renderer.compile(this.scene, this.camera)
     this.setState('menu')
@@ -231,6 +247,11 @@ export class Engine {
     this.intro = 0
     this.player.uniforms.uPhase.value = 0
     this.player.pivot.rotation.set(0, 0, 0)
+    this.portal?.hide()
+    this.portalSeg = -1
+    this.zoneFrom = 0
+    this.zoneTo = 0
+    this.zoneT = 1
     this.emitHud()
   }
 
@@ -344,6 +365,36 @@ export class Engine {
     return 12.5 + 19.5 * (1 - Math.exp(-dist / 2600))
   }
 
+  private enterPortal() {
+    const r = this.r
+    const host = this.track.get(this.portalSeg)
+    this.portalSeg = -1
+    this.portal.pass()
+    if (!host) return
+    const zi = ZONES.indexOf(host.zone)
+    this.zoneFrom = r.zone
+    this.zoneTo = zi
+    this.zoneT = 0
+    r.zone = zi
+    const z = ZONES[zi]
+    this.cb.onFlash('portal', 1)
+    this.shake = 0.75
+    r.roar = 1
+    this.audio.portal()
+    this.audio.roar()
+    haptic('heavy')
+    this.cb.onToast(z.name, z.tone)
+    if (z.id === 'upside') {
+      this.cb.onToast('THE UPSIDE DOWN IS TAKING OVER', 'red')
+      this.env.strike(this.camera, this.tmp.set(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw)), 1.4)
+      r.chase = Math.min(r.chase, 6)
+    } else if (z.id === 'vecna') {
+      this.cb.onToast('VECNA IS WATCHING', 'red')
+    } else {
+      this.cb.onToast(z.tagline.toUpperCase(), 'cyan')
+    }
+  }
+
   private loseLife(kind: 'hit' | 'fall' | 'wall') {
     const r = this.r
     r.lives--
@@ -428,28 +479,20 @@ export class Engine {
       r.nextKm += 1000
     }
 
-    // zones
-    const zi = zoneIndexAt(r.dist)
-    if (zi !== r.zone) {
-      r.zone = zi
-      const z = ZONES[zi]
-      this.cb.onToast(z.name, z.tone)
-      if (z.id === 'upside') {
-        this.cb.onToast('THE UPSIDE DOWN IS TAKING OVER', 'red')
-        this.env.strike(this.camera, this.tmp.set(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw)), 1.4)
-        this.shake = 0.8
-        r.chase = Math.min(r.chase, 6)
-        this.audio.roar()
-        haptic('heavy')
-      } else if (z.id === 'vecna') {
-        this.cb.onToast('VECNA IS WATCHING', 'red')
-        this.shake = 0.6
-        this.audio.roar()
-        haptic('heavy')
-      } else {
-        this.cb.onToast(z.tagline.toUpperCase(), 'cyan')
-        haptic('medium')
+    // zones: every new map is entered through a Demogorgon portal
+    if (this.portalSeg < 0) {
+      const next = this.track.segments.find((sg) => sg.idx > r.segIdx && sg.zone !== ZONES[r.zone])
+      if (next) {
+        this.portalSeg = next.idx
+        this.portal.place(next.toWorld(PORTAL_S, 0, 0, this.tmp), next.yaw)
       }
+    }
+    if (this.portalSeg >= 0) {
+      const cur = this.track.get(r.segIdx)!
+      const ahead =
+        this.portalSeg === r.segIdx ? PORTAL_S - r.s : this.portalSeg === r.segIdx + 1 ? cur.length - r.s + PORTAL_S : Infinity
+      if (ahead < 75) this.portal.open()
+      if (ahead <= 0) this.enterPortal()
     }
 
     // Vecna's curse: distorts the world and reverses lane controls
@@ -673,51 +716,53 @@ export class Engine {
     let bob = 0
     let roll = 0
     let px = 0
+    // target pose for this frame; uniforms ease toward it so jumps, slides and landings blend instead of snapping
+    const pose = { leg: 0.8, arm: 0.75, knee: 1.4, tuck: 0, twist: 0.16 }
+    const ph = u.uPhase.value
     if (this.state === 'menu' || this.state === 'loading') {
       u.uPhase.value = this.time * 1.4
-      u.uLegAmp.value = 0.06
-      u.uArmAmp.value = 0.08
-      u.uKnee.value = 0.1
-      u.uTuck.value = 0
+      Object.assign(pose, { leg: 0.06, arm: 0.08, knee: 0.1, tuck: 0, twist: 0.02 })
       lean = 0
       bob = Math.sin(this.time * 2) * 0.01
     } else if (dying) {
-      u.uLegAmp.value *= 0.9
-      u.uArmAmp.value = 0.9
+      Object.assign(pose, { leg: u.uLegAmp.value * 0.9, arm: 0.9, knee: 0.4, tuck: 0, twist: 0 })
       lean = 1.2
       bob = 0
     } else if (playing) {
       const airborne = r.y > 0.05 || r.fallT > 0
-      if (this.state === 'playing') u.uPhase.value += dt * (r.speed * 0.6 + 2)
+      // cadence rises with speed but strides lengthen too, so fast running never looks like spinning legs
+      if (this.state === 'playing') u.uPhase.value += dt * (4.2 + r.speed * 0.33)
       if (r.slideT > 0) {
-        u.uLegAmp.value = 0.08
-        u.uArmAmp.value = 0.15
-        u.uKnee.value = 0.4
-        u.uTuck.value = 0.35
+        Object.assign(pose, { leg: 0.08, arm: 0.15, knee: 0.4, tuck: 0.35, twist: 0 })
         lean = 1.15
         bob = 0.18
       } else if (airborne) {
-        u.uLegAmp.value = 0.3
-        u.uArmAmp.value = 0.5
-        u.uKnee.value = 0.8
-        u.uTuck.value = 0.45
-        lean = -0.2
+        Object.assign(pose, { leg: 0.35, arm: 0.55, knee: 0.85, tuck: 0.4, twist: 0.06 })
+        lean = -0.18
       } else {
-        u.uLegAmp.value = 0.8
-        u.uArmAmp.value = 0.75
-        u.uKnee.value = 1.4
-        u.uTuck.value = 0
-        bob = Math.abs(Math.sin(u.uPhase.value)) * 0.09
+        const stride = Math.min(1, r.speed / 30)
+        Object.assign(pose, { leg: 0.7 + stride * 0.2, arm: 0.65 + stride * 0.2, knee: 1.25 + stride * 0.3, tuck: 0, twist: 0.14 + stride * 0.06 })
+        const impact = Math.abs(Math.sin(ph))
+        bob = (impact * 0.6 + (0.5 - 0.5 * Math.cos(2 * ph)) * 0.4) * 0.085
+        lean = -0.2 - stride * 0.06 + Math.cos(2 * ph) * 0.025
+        roll = Math.sin(ph) * 0.035
+        px = Math.sin(ph) * 0.02
       }
-      roll = (r.lane * LANE_W - r.x) * -0.09
+      roll += (r.lane * LANE_W - r.x) * -0.09
       if (r.stumbleT > 0) {
         roll += Math.sin(this.time * 30) * 0.15 * r.stumbleT
-        px = Math.sin(this.time * 20) * 0.08 * r.stumbleT
+        px += Math.sin(this.time * 20) * 0.08 * r.stumbleT
       }
     }
+    const ease = 1 - Math.exp(-dt * 11)
+    u.uLegAmp.value += (pose.leg - u.uLegAmp.value) * ease
+    u.uArmAmp.value += (pose.arm - u.uArmAmp.value) * ease
+    u.uKnee.value += (pose.knee - u.uKnee.value) * ease
+    u.uTuck.value += (pose.tuck - u.uTuck.value) * ease
+    u.uTwist.value += (pose.twist - u.uTwist.value) * ease
     pivot.rotation.x += (lean - pivot.rotation.x) * Math.min(1, dt * 14)
     pivot.rotation.z += (roll - pivot.rotation.z) * Math.min(1, dt * 10)
-    pivot.position.y = bob
+    pivot.position.y += (bob - pivot.position.y) * Math.min(1, dt * 25)
     pivot.position.x = px
 
     // blink while invulnerable
@@ -750,6 +795,7 @@ export class Engine {
       chase = r.chase
     }
 
+    if (this.state === 'playing') chase = Math.max(1.6, chase - this.demo.surge)
     const target = r.dist - chase
     let pos: THREE.Vector3 | null = null
     let yaw = this.playerYaw
@@ -903,8 +949,9 @@ export class Engine {
     this.updateParticles(dt)
     this.ambient()
     const fwd = this.tmp2.set(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw))
-    const zb = zoneBlendAt(this.r.dist)
-    this.env.applyZone(zb.a, zb.b, zb.t)
+    this.zoneT = Math.min(1, this.zoneT + dt * 1.5)
+    this.env.applyZone(ZONES[this.zoneFrom], ZONES[this.zoneTo], THREE.MathUtils.smoothstep(this.zoneT, 0, 1))
+    this.portal.update(dt)
     this.env.update(dt, this.time, this.camera, fwd, Math.min(1, this.r.dist / 3000))
     this.hudT += dt
     if (this.hudT > 0.1 && this.state === 'playing') {

@@ -24,9 +24,8 @@ export interface Zone {
 
 const c = (hex: string) => new THREE.Color(hex)
 
-export const ZONE_LENGTH = 500
-/** metres before a zone boundary over which the sky, fog and light blend into the next zone */
-export const ZONE_BLEND = 120
+/** metres at which each map begins; every map lasts twice as long as the one before it */
+export const ZONE_STARTS = [0, 800, 1600, 3200, 6400, 12800]
 
 export const ZONES: Zone[] = [
   {
@@ -134,20 +133,11 @@ export const ZONES: Zone[] = [
 ]
 
 export function zoneIndexAt(dist: number) {
-  return Math.min(ZONES.length - 1, Math.max(0, Math.floor(dist / ZONE_LENGTH)))
+  let i = 0
+  for (let k = 1; k < Math.min(ZONE_STARTS.length, ZONES.length); k++) if (dist >= ZONE_STARTS[k]) i = k
+  return i
 }
 
 export function zoneAt(dist: number) {
   return ZONES[zoneIndexAt(dist)]
-}
-
-/** current zone, next zone and how far (0..1) the world has blended toward the next one */
-export function zoneBlendAt(dist: number): { a: Zone; b: Zone; t: number } {
-  const i = zoneIndexAt(dist)
-  const a = ZONES[i]
-  const b = ZONES[Math.min(ZONES.length - 1, i + 1)]
-  if (a === b) return { a, b, t: 0 }
-  const into = dist - i * ZONE_LENGTH
-  const t = THREE.MathUtils.smoothstep(into, ZONE_LENGTH - ZONE_BLEND, ZONE_LENGTH)
-  return { a, b, t }
 }
