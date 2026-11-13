@@ -4,7 +4,8 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 
 export type Motion = 'idle' | 'run' | 'jump' | 'slide' | 'fall'
 
-const HIPS = 'mixamorig:Hips'
+// GLTFLoader strips reserved characters such as ':' from node names, so track names use the sanitized form
+const HIPS = THREE.PropertyBinding.sanitizeNodeName('mixamorig:Hips')
 
 /**
  * Clip indices inside runner.glb. Only "Running" and "Walking" are named; the
@@ -22,16 +23,15 @@ const CLIPS = {
  * motion is removed: hips are pinned horizontally and, for the jump, never
  * rise above standing height (the anticipation crouch and landing dip remain).
  */
-function stripRootMotion(clip: THREE.AnimationClip, capRise: boolean) {
+function stripRootMotion(clip: THREE.AnimationClip, rest: THREE.Vector3, capRise: boolean) {
   const track = clip.tracks.find((t) => t.name === `${HIPS}.position`)
   if (!track) return
   const v = track.values
-  const x0 = v[0]
-  const z0 = v[2]
-  const standY = capRise ? v[1] : Infinity
+  // pin every clip to the same rest spot so crossfades never slide the body sideways or forward
+  const standY = capRise ? rest.y : Infinity
   for (let i = 0; i < v.length; i += 3) {
-    v[i] = x0
-    v[i + 2] = z0
+    v[i] = rest.x
+    v[i + 2] = rest.z
     if (v[i + 1] > standY) v[i + 1] = standY
   }
 }
@@ -125,6 +125,8 @@ export class Player {
   private setupAnimations(model: THREE.Object3D, clips: THREE.AnimationClip[]) {
     const mixer = new THREE.AnimationMixer(model)
     const byName = (n: string) => clips.find((c) => c.name === n)
+    const rest = model.getObjectByName(HIPS)?.position.clone() ?? new THREE.Vector3()
+    const strip = (clip: THREE.AnimationClip, capRise = false) => stripRootMotion(clip, rest, capRise)
 
     const run = byName(CLIPS.run.name)?.clone()
     const idle = byName(CLIPS.idle.name)?.clone()
@@ -132,16 +134,16 @@ export class Player {
     const slideSrc = clips[CLIPS.slide.index]
 
     if (run) {
-      stripRootMotion(run, false)
+      strip(run)
       this.actions.run = mixer.clipAction(run)
     }
     if (idle) {
-      stripRootMotion(idle, false)
+      strip(idle)
       this.actions.idle = mixer.clipAction(idle)
     }
     if (jumpSrc) {
       const jump = subclip(jumpSrc, 'Jump', CLIPS.jump.from, CLIPS.jump.to)
-      stripRootMotion(jump, true)
+      strip(jump, true)
       const a = mixer.clipAction(jump)
       a.setLoop(THREE.LoopOnce, 1)
       a.clampWhenFinished = true
@@ -149,7 +151,7 @@ export class Player {
     }
     if (slideSrc) {
       const slide = subclip(slideSrc, 'Slide', CLIPS.slide.from, CLIPS.slide.to)
-      stripRootMotion(slide, false)
+      strip(slide)
       const a = mixer.clipAction(slide)
       a.setLoop(THREE.LoopOnce, 1)
       a.clampWhenFinished = true
