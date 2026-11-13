@@ -182,6 +182,20 @@ export class GameAudio {
     this.noiseBurst(1.8, 'lowpass', 500, 50, 0.5)
   }
 
+  /** jumpscare stinger: earth ripping open, a shrill screech, and a guttural groan for zombies */
+  scare(groan: boolean) {
+    this.noiseBurst(0.45, 'lowpass', 900, 60, 0.55)
+    this.noiseBurst(0.3, 'bandpass', 4200, 1200, 0.3)
+    this.tone('sawtooth', 1400, 380, 0.32, 0.14)
+    this.tone('sine', 110, 32, 0.6, 0.5)
+    if (groan) {
+      this.tone('sawtooth', 95, 70, 0.9, 0.2, 0.12)
+      this.tone('sawtooth', 101, 64, 0.9, 0.14, 0.12)
+    } else {
+      this.noiseBurst(0.6, 'bandpass', 300, 900, 0.3, 0.1)
+    }
+  }
+
   /** the rift tearing open around the runner: rising suction, then a deep boom */
   portal() {
     this.noiseBurst(0.9, 'bandpass', 180, 4200, 0.45)

@@ -10,6 +10,7 @@ import { haptic } from './telegram'
 import { makeDotTexture, makeShadowTexture } from './textures'
 import { ZONES } from './zones'
 import { Portal } from './portal'
+import { updateLurker } from './lurkers'
 
 /** distance before the rift where it takes hold: the runner is pulled into the centre lane and the camera dives in */
 const PORTAL_PULL = 24
@@ -446,6 +447,19 @@ export class Engine {
     this.burst(this.tmp2, color ?? (o.kind === 'barrels' || o.kind === 'cone' ? '#ffcc22' : '#ff2a2a'), 26)
   }
 
+  /** something bursts out of a front lawn: dirt spray, a sting of sound, a jolt */
+  private jumpscare(seg: Segment, o: Obstacle) {
+    const lurk = o.lurk!
+    const x = o.kind === 'zombie' ? lurk.homeX : lurk.side * (HALF_W + 3.2)
+    seg.toWorld(o.s, x, 0.4, this.tmp2)
+    this.burst(this.tmp2, '#3a2416', 22, 7)
+    this.burst(this.tmp2, '#ff2a2a', 10, 5)
+    this.audio.scare(o.kind === 'zombie')
+    this.shake = Math.max(this.shake, 0.35)
+    this.cb.onFlash('hit', 0.18)
+    haptic('medium')
+  }
+
   private burst(at: THREE.Vector3, color: string, n: number, speed = 6) {
     const c = new THREE.Color(color)
     for (let i = 0; i < n; i++) {
@@ -614,6 +628,8 @@ export class Engine {
       let overlap = false
       if (o.lanes === null) overlap = true
       else if (o.kind === 'dog') overlap = Math.abs(r.x - (o.dogX ?? 0)) < 1.0
+      else if (o.kind === 'zombie') overlap = !!o.lurk && Math.abs(r.x - o.lurk.x) < 1.0
+      else if (o.kind === 'roots' && (!o.lurk || o.lurk.t < 0.45)) overlap = false
       else overlap = o.lanes.some((l) => Math.abs(r.x - l * LANE_W) < 1.25)
       if (!overlap) continue
       const cleared = (o.slideClears && r.slideT > 0) || r.y > o.clearY
@@ -642,6 +658,28 @@ export class Engine {
         o.object.position.set(o.dogX, 0, -o.s)
         o.dog.root.rotation.y = Math.PI + Math.cos(o.dogPhase) * 0.6
         o.dog.update(dt)
+      }
+    }
+
+    // lawn ambushes: roots and zombies stay buried until the runner is close, then burst out
+    const lurkReach = Math.max(30, r.speed * 1.9)
+    for (const sg of this.track.segments) {
+      if (sg.idx !== r.segIdx) continue
+      for (const o of sg.obstacles) {
+        if (!o.lurk || (o.kind !== 'roots' && o.kind !== 'zombie')) continue
+        const ahead = o.s - r.s
+        if (o.lurk.t < 0) {
+          if (o.hit || ahead > lurkReach || ahead < 0) continue
+          o.lurk.t = 0
+          o.object.visible = true
+          this.jumpscare(sg, o)
+        }
+        if (!o.object.visible) continue
+        updateLurker(o.kind, o.object, o.lurk, dt, this.time)
+        if (o.kind === 'zombie' && o.lurk.t > 0.75 && ahead > 1) {
+          o.s -= dt * 1.4
+          o.object.position.z = -o.s
+        }
       }
     }
 
