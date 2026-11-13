@@ -14,8 +14,8 @@ const HIPS = THREE.PropertyBinding.sanitizeNodeName('mixamorig:Hips')
 const CLIPS = {
   run: { name: 'Running' },
   idle: { name: 'Walking' },
-  jump: { index: 5, from: 0.3, to: 1.25 },
-  slide: { index: 7, from: 0.12, to: 1.62 },
+  jump: { name: 'Jump', from: 0.3, to: 1.25 },
+  slide: { name: 'Slide', from: 0.12, to: 1.62 },
 } as const
 
 /**
@@ -130,8 +130,8 @@ export class Player {
 
     const run = byName(CLIPS.run.name)?.clone()
     const idle = byName(CLIPS.idle.name)?.clone()
-    const jumpSrc = clips[CLIPS.jump.index]
-    const slideSrc = clips[CLIPS.slide.index]
+    const jumpSrc = byName(CLIPS.jump.name)
+    const slideSrc = byName(CLIPS.slide.name)
 
     if (run) {
       strip(run)
