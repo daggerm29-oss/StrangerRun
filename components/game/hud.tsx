@@ -1,4 +1,4 @@
-import { Heart, Magnet, Pause, Shield, Volume2, VolumeX } from 'lucide-react'
+import { Heart, Magnet, Pause, Shield, Sparkles, Volume2, VolumeX } from 'lucide-react'
 import type { HudData } from '@/lib/game/engine'
 
 function formatDistance(m: number) {
@@ -51,6 +51,9 @@ export function Hud({
             <p className="text-base font-semibold leading-tight text-ember">
               <span className="text-white/70">MULTIPLIER: </span>x{hud.multiplier}
             </p>
+            <p className={`text-xs font-semibold uppercase leading-tight tracking-wider ${hud.cursed ? 'animate-pulse text-blood' : 'text-white/60'}`}>
+              {hud.cursed ? 'Controls reversed' : hud.zone}
+            </p>
           </div>
           <div className="pointer-events-auto flex gap-1.5">
             <button
@@ -75,6 +78,7 @@ export function Hud({
 
       <div className="mt-2 flex flex-col gap-1.5">
         {hud.shield > 0 && <PowerBar icon={<Shield className="size-4" aria-hidden="true" />} label="Shield" value={hud.shield} color="bg-blood" />}
+        {hud.tk > 0 && <PowerBar icon={<Sparkles className="size-4" aria-hidden="true" />} label="Telekinesis" value={hud.tk} color="bg-[#c58bff]" />}
         {hud.magnet > 0 && <PowerBar icon={<Magnet className="size-4" aria-hidden="true" />} label="Magnet" value={hud.magnet} color="bg-neon" />}
       </div>
     </div>

@@ -8,6 +8,7 @@ import { GameAudio } from './audio'
 import { Input, type Action } from './input'
 import { haptic } from './telegram'
 import { makeDotTexture, makeShadowTexture } from './textures'
+import { ZONES, zoneBlendAt, zoneIndexAt } from './zones'
 
 export type GameState = 'loading' | 'menu' | 'playing' | 'paused' | 'dying' | 'over'
 
@@ -20,6 +21,9 @@ export interface HudData {
   shield: number
   magnet: number
   danger: number
+  tk: number
+  zone: string
+  cursed: boolean
 }
 
 export interface GameResult {
@@ -43,6 +47,8 @@ const SLIDE_TIME = 0.78
 const MAX_LIVES = 3
 const SHIELD_TIME = 8
 const MAGNET_TIME = 10
+const TK_TIME = 6
+const CURSE_TIME = 4.5
 
 interface Run {
   segIdx: number
@@ -69,6 +75,10 @@ interface Run {
   turnsDone: number
   hinted: number
   nextKm: number
+  zone: number
+  tkT: number
+  curseT: number
+  nextCurse: number
 }
 
 interface Particle {
@@ -208,6 +218,10 @@ export class Engine {
       turnsDone: 0,
       hinted: 0,
       nextKm: 1000,
+      zone: 0,
+      tkT: 0,
+      curseT: 0,
+      nextCurse: 6,
     }
     const seg = this.track.get(0)!
     this.camYaw = seg.yaw
@@ -292,7 +306,8 @@ export class Engine {
       if (this.tryTurn(dir)) return
       const seg = this.track.get(r.segIdx)!
       if (seg.turn === dir && seg.length - r.s < 22) r.pendingTurn = { dir, t: 0.45 }
-      r.lane = THREE.MathUtils.clamp(r.lane + dir, -1, 1)
+      const laneDir = r.curseT > 0 ? -dir : dir
+      r.lane = THREE.MathUtils.clamp(r.lane + laneDir, -1, 1)
     }
   }
 
@@ -370,13 +385,12 @@ export class Engine {
     }, 1700)
   }
 
-  private smash(o: Obstacle, seg: Segment) {
-    if (o.kind === 'car' || o.kind === 'pillar' || o.kind === 'barrels' || o.kind === 'dog') {
-      o.object.visible = false
-      const lane = o.kind === 'dog' ? (o.dogX ?? 0) : (o.lanes?.[0] ?? 0) * LANE_W
-      seg.toWorld(o.s, lane, 0.8, this.tmp2)
-      this.burst(this.tmp2, o.kind === 'barrels' ? '#ffcc22' : '#ff2a2a', 26)
-    }
+  private smash(o: Obstacle, seg: Segment, color?: string) {
+    if (o.kind === 'gap') return
+    o.object.visible = false
+    const lane = o.kind === 'dog' ? (o.dogX ?? 0) : (o.lanes?.[0] ?? 0) * LANE_W
+    seg.toWorld(o.s, lane, 0.8, this.tmp2)
+    this.burst(this.tmp2, color ?? (o.kind === 'barrels' || o.kind === 'cone' ? '#ffcc22' : '#ff2a2a'), 26)
   }
 
   private burst(at: THREE.Vector3, color: string, n: number, speed = 6) {
@@ -420,6 +434,61 @@ export class Engine {
     if (r.dist >= r.nextKm) {
       this.cb.onToast(`${r.nextKm / 1000} KM — FASTER!`, 'cyan')
       r.nextKm += 1000
+    }
+
+    // zones
+    const zi = zoneIndexAt(r.dist)
+    if (zi !== r.zone) {
+      r.zone = zi
+      const z = ZONES[zi]
+      this.cb.onToast(z.name, z.tone)
+      if (z.id === 'upside') {
+        this.cb.onToast('THE UPSIDE DOWN IS TAKING OVER', 'red')
+        this.env.strike(this.camera, this.tmp.set(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw)), 1.4)
+        this.shake = 0.8
+        r.chase = Math.min(r.chase, 6)
+        this.audio.roar()
+        haptic('heavy')
+      } else if (z.id === 'vecna') {
+        this.cb.onToast('VECNA IS WATCHING', 'red')
+        this.shake = 0.6
+        this.audio.roar()
+        haptic('heavy')
+      } else {
+        this.cb.onToast(z.tagline.toUpperCase(), 'cyan')
+        haptic('medium')
+      }
+    }
+
+    // Vecna's curse: distorts the world and reverses lane controls
+    r.curseT = Math.max(0, r.curseT - dt)
+    if (ZONES[r.zone].id === 'vecna') {
+      r.nextCurse -= dt
+      if (r.nextCurse <= 0) {
+        r.curseT = CURSE_TIME
+        r.nextCurse = 11 + Math.random() * 7
+        this.cb.onToast('VECNA’S CURSE — CONTROLS REVERSED', 'red')
+        this.cb.onFlash('hit', 0.6)
+        this.audio.roar()
+        haptic('heavy')
+      }
+    }
+
+    // Eleven's telekinesis: obstacles ahead are ripped off the track
+    r.tkT = Math.max(0, r.tkT - dt)
+    if (r.tkT > 0) {
+      for (const sg of this.track.segments) {
+        if (sg.idx !== r.segIdx && sg.idx !== r.segIdx + 1) continue
+        for (const o of sg.obstacles) {
+          if (o.hit || o.kind === 'gap') continue
+          const ahead = sg.idx === r.segIdx ? o.s - r.s : seg.length - r.s + o.s
+          if (ahead < 0 || ahead > 16) continue
+          o.hit = true
+          this.smash(o, sg, '#c58bff')
+          r.score += 25 * r.mult
+          this.shake = Math.max(this.shake, 0.15)
+        }
+      }
     }
 
     // lanes
@@ -519,6 +588,19 @@ export class Engine {
       }
     }
 
+    // demobats swoop toward the runner
+    for (const sg of this.track.segments) {
+      if (sg.idx < r.segIdx || sg.idx > r.segIdx + 1) continue
+      for (const o of sg.obstacles) {
+        if (o.kind !== 'bats') continue
+        if (sg.idx === r.segIdx && !o.hit && o.s - r.s < 30 && o.s - r.s > -2) o.s -= dt * 7
+        o.object.position.z = -o.s
+        const wings = o.object.userData.wings as THREE.Object3D[]
+        wings.forEach((w, i) => (w.rotation.z = Math.sin(this.time * 22 + i) * 0.7 * Math.sign(w.scale.x)))
+        o.object.children.forEach((b) => (b.position.y += Math.sin(this.time * 6 + (b.userData.phase as number)) * dt * 0.6))
+      }
+    }
+
     // coins
     const spin = this.time * 4
     const magnet = r.magnetT > 0
@@ -567,7 +649,11 @@ export class Engine {
         haptic('success')
         if (p.kind === 'shield') {
           r.shieldT = SHIELD_TIME
-          this.cb.onToast('ELEVEN’S SHIELD!', 'red')
+          this.cb.onToast('GATE SHIELD!', 'red')
+        } else if (p.kind === 'eleven') {
+          r.tkT = TK_TIME
+          this.cb.onToast('ELEVEN’S TELEKINESIS!', 'gold')
+          this.shake = 0.3
         } else {
           r.magnetT = MAGNET_TIME
           this.cb.onToast('WALKIE MAGNET!', 'cyan')
@@ -738,7 +824,10 @@ export class Engine {
     }
     this.camera.position.copy(this.camPos)
     this.camera.lookAt(this.camLook)
-    const targetFov = 60 + Math.min(1, (r.speed - 12) / 20) * 12 * t
+    const curse = Math.min(1, r.curseT / 0.6) * Math.min(1, (CURSE_TIME - r.curseT + 0.01) / 0.4)
+    this.env.curse = curse
+    if (curse > 0) this.camera.rotateZ(Math.sin(this.time * 2.4) * 0.16 * curse)
+    const targetFov = 60 + Math.min(1, (r.speed - 12) / 20) * 12 * t + Math.sin(this.time * 4.5) * 7 * curse
     this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, dt * 3)
     this.camera.updateProjectionMatrix()
 
@@ -778,6 +867,8 @@ export class Engine {
     this.assets.bulb.color.setScalar(Math.sin(t * 5) > -0.3 ? 1 : 0.45)
     this.assets.flesh.emissiveIntensity = 0.35 + Math.sin(t * 3) * 0.15
     this.assets.rift.opacity = 0.75 + Math.sin(t * 9) * 0.2
+    this.assets.laser.opacity = 0.7 + Math.sin(t * 31) * 0.25
+    this.assets.policeLight.color.set(Math.sin(t * 8) > 0 ? '#2a6aff' : '#ff2a2a')
     for (const m of this.assets.neon) {
       if (Math.random() < 0.004) m.opacity = 0.25
       else m.opacity += (1 - m.opacity) * 0.2
@@ -795,6 +886,9 @@ export class Engine {
       shield: r.shieldT / SHIELD_TIME,
       magnet: r.magnetT / MAGNET_TIME,
       danger: THREE.MathUtils.clamp(1 - (r.chase - 3.2) / 6, 0, 1),
+      tk: r.tkT / TK_TIME,
+      zone: ZONES[r.zone].name,
+      cursed: r.curseT > 0,
     })
   }
 
@@ -818,6 +912,8 @@ export class Engine {
     this.updateParticles(dt)
     this.ambient()
     const fwd = this.tmp2.set(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw))
+    const zb = zoneBlendAt(this.r.dist)
+    this.env.applyZone(zb.a, zb.b, zb.t)
     this.env.update(dt, this.time, this.camera, fwd, Math.min(1, this.r.dist / 3000))
     this.hudT += dt
     if (this.hudT > 0.1 && this.state === 'playing') {

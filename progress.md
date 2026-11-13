@@ -20,13 +20,21 @@ Goal: map feels like escaping Hawkins while the Upside Down takes over. Zones by
 6. 2500m+ Vecna's Territory (everything, harder, camera distortion "Vecna's curse", red storm)
 
 ### Plan / checklist
-- [ ] `lib/game/zones.ts` zone definitions (palette, fog, sky colors, obstacle table) + `zoneAt(dist)` + blend
-- [ ] `environment.ts` sky/fog/light colors blend per zone (uniforms instead of hardcoded)
-- [ ] `track.ts` per-zone floor material, side decor, obstacle patterns; segment stores zone
-- [ ] `props.ts` new geometries/materials (lamp, tree, cone, barricade, laser, cart, arcade, bat)
-- [ ] engine: zone change toast banner, Eleven telekinesis power-up, Vecna curse camera wobble, demobat obstacle
-- [ ] HUD: show current zone name
-- [ ] typecheck, browser check, commit, push, PR
+- [x] `lib/game/zones.ts` zone definitions (palette, fog, sky colors, obstacle table) + `zoneAt(dist)` + blend
+- [x] `environment.ts` sky/fog/light colors blend per zone (uniforms instead of hardcoded)
+- [x] `track.ts` per-zone floor material, side decor, obstacle patterns; segment stores zone
+- [x] `props.ts` new geometries/materials (lamp, tree, cone, barricade, laser, cart, arcade, bat)
+- [x] engine: zone change toast banner, Eleven telekinesis power-up, Vecna curse camera wobble, demobat obstacle
+- [x] HUD: show current zone name
+- [x] typecheck passes
+- [ ] browser check of each zone (use window.__runner.simulate / set r.dist), then PR
+
+### Implemented mechanics
+- Zones blend over last 120m (`ZONE_BLEND`) before each 500m boundary; toast banner on entry
+- Role builders in track.ts: jumpWall / slideWall / block / low pick zone-specific obstacles
+- Demobats (`bats`): full-width, slide under, swoop toward player
+- Eleven pickup (`eleven`): 6s telekinesis smashes obstacles 16m ahead
+- Vecna zone: curse every 11-18s for 4.5s: camera roll + fov warp + thicker fog + reversed lane controls
 
 ## Notes
 - Obstacle model: `{kind, s, depth, lanes|null, clearY (jump height, Infinity=no jump), slideClears}` - new obstacles reuse this, so collision code needs no change.
