@@ -38,24 +38,47 @@ export class Portal {
       loader.setMeshoptDecoder(MeshoptDecoder)
       const gltf = await loader.loadAsync(url)
       const model = gltf.scene
-      const box = new THREE.Box3().setFromObject(model)
-      const size = box.getSize(new THREE.Vector3())
-      const center = box.getCenter(new THREE.Vector3())
-      const scale = DIAMETER / Math.max(size.x, size.y)
-      model.scale.setScalar(scale)
-      model.position.set(-center.x * scale, -center.y * scale + DIAMETER / 2 - 0.4, -center.z * scale)
+      const skinned: THREE.SkinnedMesh[] = []
       model.traverse((o) => {
         const mesh = o as THREE.Mesh
-        if (mesh.isMesh) mesh.frustumCulled = false
+        if (!mesh.isMesh) return
+        mesh.frustumCulled = false
+        if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) skinned.push(mesh as THREE.SkinnedMesh)
       })
-      this.holder.add(model)
       this.mixer = new THREE.AnimationMixer(model)
       const clip = gltf.animations.find((a) => /\|Open$/.test(a.name))
       if (clip) {
         this.openAction = this.mixer.clipAction(clip)
         this.openAction.setLoop(THREE.LoopOnce, 1)
         this.openAction.clampWhenFinished = true
+        // measure the rig in its fully opened pose: the bones, not the bind pose, decide its real orientation
+        this.openAction.play()
+        this.mixer.setTime(clip.duration)
       }
+
+      // orient → fit → model: orient turns the ring upright, fit centres and scales it
+      const orient = new THREE.Group()
+      const fit = new THREE.Group()
+      orient.add(model)
+      fit.add(orient)
+      const measure = () => {
+        fit.updateMatrixWorld(true)
+        for (const s of skinned) s.skeleton.update()
+        return new THREE.Box3().setFromObject(orient, true)
+      }
+      const raw = measure().getSize(new THREE.Vector3())
+      // the ring's thinnest axis is its facing direction; turn it to face down the road (Z)
+      if (raw.y <= raw.x && raw.y <= raw.z) orient.rotation.x = Math.PI / 2
+      else if (raw.x <= raw.y && raw.x <= raw.z) orient.rotation.y = Math.PI / 2
+
+      const box = measure()
+      const size = box.getSize(new THREE.Vector3())
+      const center = box.getCenter(new THREE.Vector3())
+      const scale = DIAMETER / Math.max(size.x, size.y)
+      fit.scale.setScalar(scale)
+      fit.position.set(-center.x * scale, -center.y * scale + DIAMETER / 2 - 0.4, -center.z * scale)
+      this.holder.add(fit)
+      this.openAction?.stop()
     } catch (err) {
       console.log('[v0] portal load failed', err)
     }
