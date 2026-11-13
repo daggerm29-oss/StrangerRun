@@ -138,7 +138,7 @@ export class Environment {
 
     this.hemi = new THREE.HemisphereLight('#ff7a6a', '#1a0406', 0.6)
     scene.add(this.hemi)
-    this.moon = new THREE.DirectionalLight('#9fb0ff', 1.3)
+    this.moon = new THREE.DirectionalLight('#b8c6ff', 2.4)
     this.moon.position.set(-20, 30, 20)
     scene.add(this.moon)
     this.flashLight = new THREE.DirectionalLight('#ffb0b0', 0)
@@ -214,7 +214,7 @@ export class Environment {
     ;(u.uTop.value as THREE.Color).lerpColors(a.skyTop, b.skyTop, t)
     const fog = this.scene.fog as THREE.FogExp2
     fog.color.lerpColors(a.fog, b.fog, t)
-    fog.density = THREE.MathUtils.lerp(a.fogDensity, b.fogDensity, t) + this.curse * 0.012
+    fog.density = THREE.MathUtils.lerp(a.fogDensity, b.fogDensity, t) * 0.8 + this.curse * 0.012
     ;(this.scene.background as THREE.Color).copy(fog.color)
     this.hemi.color.lerpColors(a.hemiSky, b.hemiSky, t)
     this.hemi.groundColor.lerpColors(a.hemiGround, b.hemiGround, t)
@@ -325,7 +325,7 @@ export class Environment {
     const f = this.flash * flick
     this.skyMat.uniforms.uFlash.value = f
     this.sporeMat.uniforms.uFlash.value = f
-    this.hemi.intensity = 0.75 + f * 2.4
+    this.hemi.intensity = 1.7 + f * 2.4
     this.flashLight.intensity = f * 5
   }
 }
