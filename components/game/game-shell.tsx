@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Engine, GameResult, GameState, HudData } from '@/lib/game/engine'
 import { initTelegram, loadBest, saveBest } from '@/lib/game/telegram'
+import { canUseLeaderboard, submitScore } from '@/lib/game/leaderboard-client'
+import { LeaderboardScreen } from './leaderboard-screen'
+import { mutate } from 'swr'
 import { Hud } from './hud'
 import { StartScreen } from './start-screen'
 import { GameOverScreen } from './game-over-screen'
@@ -26,6 +29,13 @@ export function GameShell() {
   const [flash, setFlash] = useState<{ kind: 'hit' | 'lightning'; id: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const bestRef = useRef(0)
+  const [showBoard, setShowBoard] = useState(false)
+  const [rank, setRank] = useState<number | null>(null)
+  const [boardEnabled, setBoardEnabled] = useState(false)
+
+  useEffect(() => {
+    setBoardEnabled(canUseLeaderboard())
+  }, [])
 
   useEffect(() => {
     initTelegram()
@@ -52,6 +62,15 @@ export function GameShell() {
           onFlash: (kind) => setFlash({ kind, id: Date.now() }),
           onResult: (r) => {
             setResult(r)
+            setRank(null)
+            if (canUseLeaderboard()) {
+              submitScore(r.score, Math.floor(r.distance))
+                .then((res) => {
+                  setRank(res.me?.rank ?? null)
+                  mutate('leaderboard', res, { revalidate: false })
+                })
+                .catch((e: unknown) => console.log('[v0] score submit failed', e))
+            }
             if (r.score > bestRef.current) {
               bestRef.current = r.score
               setBest(r.score)
@@ -115,13 +134,30 @@ export function GameShell() {
       {state === 'playing' && <Toasts items={toasts} />}
 
       {state === 'loading' && <LoadingScreen progress={progress} error={error} />}
-      {state === 'menu' && <StartScreen best={best} onStart={start} muted={muted} onToggleMute={toggleMute} />}
+      {state === 'menu' && (
+        <StartScreen
+          best={best}
+          onStart={start}
+          muted={muted}
+          onToggleMute={toggleMute}
+          onLeaderboard={boardEnabled ? () => setShowBoard(true) : undefined}
+        />
+      )}
       {state === 'paused' && (
         <PauseScreen onResume={() => engineRef.current?.resume()} onQuit={() => engineRef.current?.toMenu()} />
       )}
       {state === 'over' && result && (
-        <GameOverScreen result={result} best={best} isNewBest={newBest} onRetry={start} onMenu={() => engineRef.current?.toMenu()} />
+        <GameOverScreen
+          result={result}
+          best={best}
+          isNewBest={newBest}
+          rank={rank}
+          onLeaderboard={boardEnabled ? () => setShowBoard(true) : undefined}
+          onRetry={start}
+          onMenu={() => engineRef.current?.toMenu()}
+        />
       )}
+      {showBoard && <LeaderboardScreen onClose={() => setShowBoard(false)} />}
     </main>
   )
 }

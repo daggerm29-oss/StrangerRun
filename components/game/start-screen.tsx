@@ -6,9 +6,11 @@ export function StartScreen({
   onStart,
   muted,
   onToggleMute,
+  onLeaderboard,
 }: {
   best: number
   onStart: () => void
+  onLeaderboard?: () => void
   muted: boolean
   onToggleMute: () => void
 }) {
@@ -43,6 +45,15 @@ export function StartScreen({
         >
           Run
         </button>
+        {onLeaderboard && (
+          <button
+            type="button"
+            onClick={onLeaderboard}
+            className="flex w-full items-center justify-center gap-2 rounded-md border border-gold/50 bg-black/60 py-3 font-sans text-base uppercase tracking-widest text-gold active:scale-[0.98]"
+          >
+            <Trophy className="size-4" aria-hidden="true" /> Leaderboard
+          </button>
+        )}
         <ul className="grid w-full grid-cols-2 gap-2 font-sans text-xs uppercase tracking-wider text-white/80">
           <Hint icon={<ArrowLeftRight className="size-4" aria-hidden="true" />} text="Swipe to change lane" />
           <Hint icon={<CornerUpRight className="size-4" aria-hidden="true" />} text="Swipe at corners to turn" />
