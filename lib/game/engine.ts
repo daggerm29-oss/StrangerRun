@@ -49,6 +49,8 @@ export interface EngineCallbacks {
 const GRAVITY = 34
 const JUMP_V = 11.2
 const SLIDE_TIME = 0.78
+/** lowest render resolution the adaptive scaler may fall to */
+const MIN_PR = 1.1
 const MAX_LIVES = 3
 const SHIELD_TIME = 8
 const MAGNET_TIME = 10
@@ -164,15 +166,13 @@ export class Engine {
   constructor(container: HTMLElement, cb: EngineCallbacks) {
     this.container = container
     this.cb = cb
-    // phones: no MSAA and a lower pixel ratio ceiling; the resolution then adapts to the measured frame time
-    const mobile = window.matchMedia?.('(pointer: coarse)').matches ?? false
     this.renderer = new THREE.WebGLRenderer({
-      antialias: !mobile,
+      antialias: true,
       alpha: false,
       stencil: false,
       powerPreference: 'high-performance',
     })
-    this.maxPR = Math.min(window.devicePixelRatio || 1, mobile ? 1.4 : 1.75)
+    this.maxPR = Math.min(window.devicePixelRatio || 1, 1.75)
     this.pr = this.maxPR
     this.renderer.setPixelRatio(this.pr)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -1001,12 +1001,13 @@ export class Engine {
     this.qualityCool -= ms / 1000
     this.upscaleCool -= ms / 1000
     if (this.qualityCool > 0) return
-    if (this.frameMs > 20 && this.pr > 0.7) {
-      this.pr = Math.max(0.7, this.pr * 0.86)
-      this.upscaleCool = 15
-    } else if (this.frameMs < 17.5 && this.pr < this.maxPR && this.upscaleCool <= 0) {
-      this.pr = Math.min(this.maxPR, this.pr * 1.08)
-      this.upscaleCool = 15
+    // only steps in when the game is truly struggling (under ~30fps) and never drops below native-ish sharpness
+    if (this.frameMs > 34 && this.pr > MIN_PR) {
+      this.pr = Math.max(MIN_PR, this.pr * 0.9)
+      this.upscaleCool = 8
+    } else if (this.frameMs < 20 && this.pr < this.maxPR && this.upscaleCool <= 0) {
+      this.pr = Math.min(this.maxPR, this.pr * 1.1)
+      this.upscaleCool = 8
     } else return
     this.qualityCool = 1.5
     this.renderer.setPixelRatio(this.pr)
