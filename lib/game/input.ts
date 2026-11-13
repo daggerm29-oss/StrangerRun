@@ -12,6 +12,7 @@ export class Input {
   constructor(el: HTMLElement, onAction: (a: Action) => void) {
     this.el = el
     this.onAction = onAction
+    el.style.touchAction = 'none'
     el.addEventListener('pointerdown', this.down)
     el.addEventListener('pointermove', this.move)
     el.addEventListener('pointerup', this.up)
@@ -28,14 +29,16 @@ export class Input {
   }
 
   private move = (e: PointerEvent) => {
-    if (!this.active || this.fired || e.pointerId !== this.id) return
+    if (!this.active || e.pointerId !== this.id) return
     const dx = e.clientX - this.sx
     const dy = e.clientY - this.sy
-    const threshold = Math.max(22, Math.min(window.innerWidth, window.innerHeight) * 0.05)
+    const threshold = Math.max(12, Math.min(window.innerWidth, window.innerHeight) * 0.028)
     if (Math.abs(dx) < threshold && Math.abs(dy) < threshold) return
-    this.fired = true
     if (Math.abs(dx) > Math.abs(dy)) this.onAction(dx > 0 ? 'right' : 'left')
     else this.onAction(dy > 0 ? 'down' : 'up')
+    // re-anchor so one continuous drag can chain several swipes
+    this.sx = e.clientX
+    this.sy = e.clientY
   }
 
   private up = () => {

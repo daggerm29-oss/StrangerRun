@@ -142,7 +142,7 @@ export class Engine {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75))
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = 1.05
+    this.renderer.toneMappingExposure = 1.6
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     container.appendChild(this.renderer.domElement)
     this.renderer.domElement.style.display = 'block'
@@ -493,7 +493,7 @@ export class Engine {
 
     // lanes
     const tx = r.lane * LANE_W
-    r.x += (tx - r.x) * Math.min(1, dt * 13)
+    r.x += (tx - r.x) * (1 - Math.exp(-dt * 16))
 
     // turn buffering + hint
     if (r.pendingTurn) {
