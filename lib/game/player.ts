@@ -1,6 +1,5 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 
 export type Motion = 'idle' | 'run' | 'jump' | 'slide' | 'fall'
 
@@ -78,8 +77,7 @@ export class Player {
   }
 
   async load(url: string, onProgress: (p: number) => void) {
-    const draco = new DRACOLoader().setDecoderPath('/draco/')
-    const loader = new GLTFLoader().setDRACOLoader(draco)
+    const loader = new GLTFLoader()
     try {
       const gltf = await loader.loadAsync(url, (e) => {
         if (e.total) onProgress(e.loaded / e.total)
@@ -116,8 +114,6 @@ export class Player {
       body.position.y = 0.85
       fallback.add(body)
       this.model = fallback
-    } finally {
-      draco.dispose()
     }
     this.pivot.add(this.model)
   }
