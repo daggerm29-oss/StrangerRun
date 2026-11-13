@@ -30,6 +30,17 @@ Goal: map feels like escaping Hawkins while the Upside Down takes over. Zones by
 - [x] PR opened from `v0/hawkins-zones`
 - [ ] Visual play-test on a real device (sandbox browser has no WebGL). Tune obstacle heights/colours if needed.
 
+## DONE: Rich environment detail pass (branch `v0/rich-environments`)
+- New `lib/game/scenery.ts` `SceneryKit.decorate(seg)` called from `Track.build`; animated in `engine.ambient()` via `track.kit.update(t)`
+- All static detail is baked into ~14 vertex-coloured merged meshes/points per segment (lit, gloss, glow, flicker, blink, pulse, additive, flesh, silhouette + glow points/mist). Additive + points fade to black in fog (`fogToBlack`).
+- Town: sidewalks, lamps w/ light cones + pools, utility poles + wires, detailed houses (porch, windows, fences, driveways, cars, xmas lights, autumn trees), MISSING posters, hydrants/mailboxes/bikes, puddles, steaming manholes, crosswalks, pine treeline, HAWKINS water tower, WELCOME TO HAWKINS sign (seg 0, menu shot)
+- Forest: dense pines, grass/ferns/rocks/stumps/logs, glowing mushrooms, ground mist, moon shafts, Castle Byers, Mirkwood signpost, Will's bike + flashlight
+- Lab: hazard chevrons, pipe runs, CRTs, LED panels, signs, observation windows, security doors, alarm beacons, fluorescent light volumes, cable trays, the Gate crack, drums, end wall
+- Mall (fully rebuilt in kit): lit shop interiors (mannequins/arcade/Scoops Ahoy/TV wall), neon trims, balcony + upper shops, palms, benches, skylight trusses, banners, balloons, junction storefront
+- Upside Down: giant tendrils, dripping vines, pulsing deck veins, floating debris, decayed cars/lamps, Joyce's alphabet wall, Mind Flayer silhouette
+- Vecna: flesh vine arches, floating islands (Creel house, grandfather clocks, dead trees), sky rifts
+- Headless test: ~30-70k verts, 25-77 objects, 3-18ms build per segment
+
 ## NEXT IDEAS (not started)
 - Branching paths (safe vs shortcut), bike escape set piece, portal jump between zones
 - Junkyard zone (buses to run on top of), quarry cliff path with falling rocks

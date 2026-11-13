@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { Assets, HALF_W, LANE_W } from './props'
 import { Demodog } from './demogorgon'
 import { zoneAt, type Zone, type ZoneId } from './zones'
+import { SceneryKit } from './scenery'
 
 export const DIRS = [new THREE.Vector2(0, -1), new THREE.Vector2(1, 0), new THREE.Vector2(0, 1), new THREE.Vector2(-1, 0)]
 
@@ -166,10 +167,12 @@ export class Track {
   haloRed: THREE.SpriteMaterial
   haloViolet: THREE.SpriteMaterial
   haloWarm: THREE.SpriteMaterial
+  kit: SceneryKit
 
   constructor(scene: THREE.Scene, assets: Assets) {
     this.scene = scene
     this.assets = assets
+    this.kit = new SceneryKit(assets, assets.halo.map!)
     this.haloRed = assets.halo.clone()
     this.haloCyan = assets.halo.clone()
     this.haloCyan.color.set('#36e3ff')
@@ -922,6 +925,8 @@ export class Track {
       }
     }
 
+    this.kit.decorate(seg, { s0, s1, inGap })
+
     // coins
     if (seg.coins.length) {
       seg.coins = seg.coins.filter((c) => !seg.obstacles.some((o) => this.coinBlocked(o, c)))
@@ -985,48 +990,7 @@ export class Track {
           curbs.push(mat(side * (HALF_W + 0.12), 0.06, -(s + span / 2), 0, 0, 0, 2, 1.2, span))
         }
       seg.addInstanced(a.railGeo, a.curb, curbs)
-
-      const poles: THREE.Matrix4[] = []
-      const arms: THREE.Matrix4[] = []
-      const heads: THREE.Matrix4[] = []
-      let side = Math.random() < 0.5 ? -1 : 1
-      for (let s = s0 + 6; s < L - 2; s += 15) {
-        side = -side
-        if (blocked(side, s) || inGapish(seg, s)) continue
-        const x = side * (HALF_W + 1.2)
-        poles.push(mat(x, 2.6, -s))
-        arms.push(mat(x - side * 0.6, 5.15, -s))
-        heads.push(mat(x - side * 1.2, 5.05, -s))
-        const halo = new THREE.Sprite(this.haloWarm)
-        halo.position.set(x - side * 1.2, 4.9, -s)
-        halo.scale.setScalar(3.2)
-        seg.group.add(halo)
-      }
-      seg.addInstanced(a.lampPoleGeo, a.metal, poles)
-      seg.addInstanced(a.lampArmGeo, a.metal, arms)
-      seg.addInstanced(a.lampHeadGeo, a.lampGlow, heads)
-
-      const houses = Math.floor(rand(3, 6))
-      for (let i = 0; i < houses; i++) {
-        const hs = rand(10, L - 18)
-        const hside = Math.random() < 0.5 ? -1 : 1
-        if (blocked(hside, hs) || (hside === seg.turn && hs > L - 20)) continue
-        const hg = new THREE.Group()
-        const body = new THREE.Mesh(a.houseGeo, pick(a.houseMats))
-        body.position.y = 2.5
-        const roof = new THREE.Mesh(a.roofGeo, a.roof)
-        roof.position.y = 6.3
-        roof.rotation.y = Math.PI / 4
-        hg.add(body, roof)
-        hg.position.set(hside * rand(12, 22), 0, -hs)
-        hg.rotation.y = hside * (Math.PI / 2) + rand(-0.15, 0.15)
-        hg.scale.setScalar(rand(1.0, 1.3))
-        seg.group.add(hg)
-      }
-      for (let s = s0; s < L; s += rand(10, 18)) {
-        const tside = Math.random() < 0.5 ? -1 : 1
-        if (!blocked(tside, s)) addTree(tside * rand(8, 30), s, rand(0.7, 1.1))
-      }
+      // lamps, houses, poles and street clutter come from SceneryKit
     } else if (z === 'forest') {
       const bushes: THREE.Matrix4[] = []
       for (let s = s0; s < L + 20; s += rand(2.2, 4.5)) {
@@ -1067,29 +1031,8 @@ export class Track {
       seg.addInstanced(a.panelGeo, a.labPanel, panels)
       seg.addInstanced(a.beamGeo, a.metal, beams)
       seg.addInstanced(a.panelGeo, a.labPanel, lights)
-    } else {
-      const byMat: THREE.Matrix4[][] = a.shopGlass.map(() => [])
-      const frames: THREE.Matrix4[] = []
-      for (const side of [-1, 1])
-        for (let s = s0 + 2; s < L - 2; s += 8) {
-          if (blocked(side, s) || (side === seg.turn && s > L - HALF_W - 9)) continue
-          const x = side * (HALF_W + 2.6)
-          byMat[Math.floor(Math.random() * byMat.length)].push(mat(x, 1.8, -(s + 4)))
-          frames.push(mat(x, 2.3, -s))
-          if (Math.random() < 0.55) {
-            const sign = new THREE.Mesh(a.signGeo, pick(a.neon))
-            sign.position.set(x - side * 0.3, 4.4, -(s + 4))
-            sign.rotation.y = -side * (Math.PI / 2)
-            sign.scale.setScalar(0.8)
-            seg.group.add(sign)
-          }
-        }
-      byMat.forEach((list, i) => seg.addInstanced(a.shopGeo, a.shopGlass[i], list))
-      seg.addInstanced(a.shopFrameGeo, a.chrome, frames)
-      const sky: THREE.Matrix4[] = []
-      for (let s = s0 + 4; s < L - HALF_W - 1; s += 10) sky.push(mat(0, 6.2, -s, 0, 0, 0, 1.7, 1, 1))
-      seg.addInstanced(a.beamGeo, a.chrome, sky)
     }
+    // the mall interior (shops, balcony, skylights) is built entirely by SceneryKit
     trees.forEach((list, i) => seg.addInstanced(a.treeGeos[i], a.bark, list))
   }
 

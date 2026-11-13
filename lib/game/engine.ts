@@ -889,6 +889,7 @@ export class Engine {
     this.assets.rift.opacity = 0.75 + Math.sin(t * 9) * 0.2
     this.assets.laser.opacity = 0.7 + Math.sin(t * 31) * 0.25
     this.assets.policeLight.color.set(Math.sin(t * 8) > 0 ? '#2a6aff' : '#ff2a2a')
+    this.track.kit.update(t)
     for (const m of this.assets.neon) {
       if (Math.random() < 0.004) m.opacity = 0.25
       else m.opacity += (1 - m.opacity) * 0.2
