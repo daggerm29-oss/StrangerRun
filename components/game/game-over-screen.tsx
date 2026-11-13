@@ -1,4 +1,4 @@
-import { Home, RotateCcw, Send } from 'lucide-react'
+import { Home, RotateCcw, Send, Trophy } from 'lucide-react'
 import type { GameResult } from '@/lib/game/engine'
 import { shareScore } from '@/lib/game/telegram'
 
@@ -8,10 +8,14 @@ export function GameOverScreen({
   isNewBest,
   onRetry,
   onMenu,
+  rank,
+  onLeaderboard,
 }: {
   result: GameResult
   best: number
   isNewBest: boolean
+  rank?: number | null
+  onLeaderboard?: () => void
   onRetry: () => void
   onMenu: () => void
 }) {
@@ -33,6 +37,7 @@ export function GameOverScreen({
         <Stat label="Distance" value={km} />
         <Stat label="Coins" value={String(result.coins)} />
         <Stat label="Best" value={best.toLocaleString('en-US')} wide />
+        {rank ? <Stat label="Your rank" value={`#${rank}`} wide /> : null}
       </dl>
 
       <div className="flex w-full max-w-sm flex-col gap-2.5">
@@ -43,6 +48,15 @@ export function GameOverScreen({
         >
           <RotateCcw className="size-5" aria-hidden="true" /> Run again
         </button>
+        {onLeaderboard && (
+          <button
+            type="button"
+            onClick={onLeaderboard}
+            className="flex w-full items-center justify-center gap-2 rounded-md border border-gold/50 bg-black/60 py-3 font-sans text-base uppercase tracking-widest text-gold active:scale-[0.98]"
+          >
+            <Trophy className="size-4" aria-hidden="true" /> Leaderboard
+          </button>
+        )}
         <div className="grid grid-cols-2 gap-2.5">
           <button
             type="button"

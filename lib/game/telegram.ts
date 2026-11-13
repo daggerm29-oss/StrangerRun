@@ -7,7 +7,7 @@ interface TgWebApp {
   setBottomBarColor?: (c: string) => void
   lockOrientation?: () => void
   isVersionAtLeast?: (v: string) => boolean
-  initDataUnsafe?: { user?: { first_name?: string } }
+  initDataUnsafe?: { user?: { id?: number; first_name?: string } }
   HapticFeedback?: {
     impactOccurred: (s: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft') => void
     notificationOccurred: (s: 'error' | 'success' | 'warning') => void
@@ -63,6 +63,10 @@ function cloud() {
   const app = tg()
   if (!app || !inTelegram() || !app.isVersionAtLeast?.('6.9')) return undefined
   return app.CloudStorage
+}
+
+export function initDataRaw() {
+  return (tg() as unknown as { initData?: string } | undefined)?.initData ?? ''
 }
 
 export function playerName() {
