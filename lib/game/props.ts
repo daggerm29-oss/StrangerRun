@@ -14,6 +14,8 @@ import {
 
 export const LANE_W = 2.1
 export const HALF_W = 3.5
+/** where along a new map's first segment its portal wall stands: far enough past the corner to be seen and lined up */
+export const PORTAL_S = HALF_W + 24
 
 function tube(points: THREE.Vector3[], radius: number, radial = 6) {
   const curve = new THREE.CatmullRomCurve3(points)

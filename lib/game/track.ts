@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { Assets, HALF_W, LANE_W } from './props'
+import { Assets, HALF_W, LANE_W, PORTAL_S } from './props'
 import { Demodog } from './demogorgon'
 import { zoneAt, type Zone, type ZoneId } from './zones'
 import { SceneryKit } from './scenery'
@@ -215,7 +215,7 @@ export class Track {
     const turn = pick(options)
     this.heading += turn
     const seg = new Segment(idx, start, dir, length, turn, prev ? prev.turn : 0, zoneAt(this.distCursor + 20))
-    this.populate(seg, d, speedEst)
+    this.populate(seg, d, speedEst, !!prev && prev.zone !== seg.zone)
     this.build(seg)
     this.scene.add(seg.group)
     this.segments.push(seg)
@@ -223,12 +223,17 @@ export class Track {
   }
 
   // ---------- obstacle & coin generation ----------
-  private populate(seg: Segment, d: number, speedEst: number) {
+  private populate(seg: Segment, d: number, speedEst: number, portalEntry: boolean) {
     const L = seg.length
     const dist = this.distCursor
-    let s = seg.idx === 0 ? 48 : HALF_W + 16
     const endS = L - HALF_W - 14
     const speed = Math.max(speedEst, 14)
+    let s = seg.idx === 0 ? 48 : HALF_W + 16
+    if (portalEntry) {
+      // give the runner ~2.5s of clear road after the rift to read the new map
+      s = PORTAL_S + Math.max(38, speed * 2.5)
+      this.coinLine(seg, HALF_W + 6, PORTAL_S + 14, 0)
+    }
     while (s < endS) {
       const local = dist + s
       const reaction = lerp(1.35, 0.62, d)
