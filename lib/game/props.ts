@@ -1,6 +1,10 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import {
+  makeAsphaltTexture,
+  makeDirtTexture,
+  makeSignTexture,
+  makeTileTexture,
   makeBarrelTexture,
   makeHouseTexture,
   makeNeonTexture,
@@ -103,9 +107,135 @@ export class Assets {
   signPoleGeo = new THREE.CylinderGeometry(0.08, 0.08, 6, 6)
   arrowGeo: THREE.ShapeGeometry
 
+  // ---- zone floors & sides ----
+  asphalt!: THREE.MeshStandardMaterial
+  dirt!: THREE.MeshStandardMaterial
+  labTile!: THREE.MeshStandardMaterial
+  mallTile!: THREE.MeshStandardMaterial
+  fleshFloor!: THREE.MeshStandardMaterial
+  grass = new THREE.MeshStandardMaterial({ color: '#1f2c18', roughness: 1 })
+  forestFloor = new THREE.MeshStandardMaterial({ color: '#1a1a0e', roughness: 1 })
+  concrete = new THREE.MeshStandardMaterial({ color: '#3a4448', roughness: 0.9 })
+  mallFloorSide = new THREE.MeshStandardMaterial({ color: '#2a1a34', roughness: 0.5, metalness: 0.2 })
+  curb = new THREE.MeshStandardMaterial({ color: '#7a7a74', roughness: 0.9 })
+
+  // ---- town ----
+  metal = new THREE.MeshStandardMaterial({ color: '#4a4e54', roughness: 0.5, metalness: 0.6 })
+  lampGlow = new THREE.MeshBasicMaterial({ color: '#ffd89a', toneMapped: false })
+  coneMat = new THREE.MeshStandardMaterial({ color: '#ff6a1a', roughness: 0.6, emissive: '#5a1a00', emissiveIntensity: 0.4 })
+  barricadeMat!: THREE.MeshStandardMaterial
+  policeLight = new THREE.MeshBasicMaterial({ color: '#2a6aff', toneMapped: false })
+  lampPoleGeo = new THREE.CylinderGeometry(0.07, 0.1, 5.2, 6)
+  lampArmGeo = new THREE.BoxGeometry(1.4, 0.08, 0.08)
+  lampHeadGeo = new THREE.BoxGeometry(0.5, 0.14, 0.3)
+  coneGeo: THREE.BufferGeometry
+  boardGeo = new THREE.BoxGeometry(2.0, 0.32, 0.08)
+  legGeo = new THREE.BoxGeometry(0.08, 1.0, 0.08)
+
+  // ---- forest ----
+  logGeo: THREE.BufferGeometry
+  bushGeo = new THREE.IcosahedronGeometry(1, 0)
+  leaf = new THREE.MeshStandardMaterial({ color: '#132a14', roughness: 1, flatShading: true })
+
+  // ---- lab ----
+  laser = new THREE.MeshBasicMaterial({
+    color: '#ff1a2a',
+    toneMapped: false,
+    transparent: true,
+    opacity: 0.95,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  })
+  laserGeo = new THREE.BoxGeometry(HALF_W * 2 + 0.6, 0.05, 0.05)
+  emitterGeo = new THREE.BoxGeometry(0.25, 2.6, 0.25)
+  labWall = new THREE.MeshStandardMaterial({ color: '#56646a', roughness: 0.7, metalness: 0.2 })
+  labPanel = new THREE.MeshBasicMaterial({ color: '#5ae8ff', toneMapped: false })
+  wallGeo = new THREE.BoxGeometry(0.4, 4.2, 2.5)
+  panelGeo = new THREE.BoxGeometry(0.06, 0.18, 2.2)
+  beamGeo = new THREE.BoxGeometry(HALF_W * 2 + 1.2, 0.3, 0.4)
+  doorGeo = new THREE.BoxGeometry(1.9, 2.8, 0.35)
+  doorMat!: THREE.MeshStandardMaterial
+
+  // ---- mall ----
+  cartGeo: THREE.BufferGeometry
+  chrome = new THREE.MeshStandardMaterial({ color: '#c8ccd4', roughness: 0.25, metalness: 0.9 })
+  arcadeGeo = new THREE.BoxGeometry(0.95, 1.95, 0.85)
+  arcadeScreenGeo = new THREE.PlaneGeometry(0.7, 0.55)
+  arcadeBody = new THREE.MeshStandardMaterial({ color: '#1a1030', roughness: 0.5 })
+  arcadeScreens: THREE.MeshBasicMaterial[] = ['#36e3ff', '#ff2fd0', '#ffd23a'].map(
+    (c) => new THREE.MeshBasicMaterial({ color: c, toneMapped: false }),
+  )
+  shopGlass: THREE.MeshBasicMaterial[] = ['#ff5ad8', '#5ae0ff', '#ffb43a', '#8a5aff'].map(
+    (c) => new THREE.MeshBasicMaterial({ color: c, toneMapped: false, transparent: true, opacity: 0.55 }),
+  )
+  shopGeo = new THREE.BoxGeometry(0.3, 3.6, 7.5)
+  shopFrameGeo = new THREE.BoxGeometry(0.5, 4.6, 0.5)
+
+  // ---- creatures & powers ----
+  batBodyGeo = new THREE.SphereGeometry(0.16, 6, 4)
+  batWingGeo: THREE.BufferGeometry
+  bat = new THREE.MeshStandardMaterial({ color: '#2a0a0e', roughness: 0.6, emissive: '#5a0010', emissiveIntensity: 0.6, side: THREE.DoubleSide })
+  rockGeo = new THREE.DodecahedronGeometry(0.8, 0)
+  rock = new THREE.MeshStandardMaterial({ color: '#2a1416', roughness: 0.9, emissive: '#3a0006', emissiveIntensity: 0.4, flatShading: true })
+  elevenOrb = new THREE.MeshBasicMaterial({ color: '#d79bff', toneMapped: false })
+
   constructor(dot: THREE.Texture) {
+    const tiled = (tex: THREE.Texture, color = '#ffffff', rough = 0.8, metal = 0.05) =>
+      new THREE.MeshStandardMaterial({ map: tex, color, roughness: rough, metalness: metal })
+    this.asphalt = tiled(makeAsphaltTexture(), '#b8b8c0', 0.85)
+    this.dirt = tiled(makeDirtTexture(), '#c8b8a8', 1)
+    this.labTile = tiled(makeTileTexture('#9aa6aa', '#9aa6aa', '#3a4448', false), '#c8d8dc', 0.4, 0.1)
+    this.mallTile = tiled(makeTileTexture('#e8e0d8', '#3a2a4a', '#2a1a30', true), '#e0d8e0', 0.25, 0.15)
+    this.barricadeMat = new THREE.MeshStandardMaterial({ map: makeSignTexture('ROAD CLOSED', '#f2f2ec', '#d01a1a'), roughness: 0.6 })
+    this.doorMat = new THREE.MeshStandardMaterial({ map: makeSignTexture('RESTRICTED', '#d8b020', '#141414'), roughness: 0.5, metalness: 0.4 })
+
+    const cone = new THREE.ConeGeometry(0.32, 0.85, 10)
+    cone.translate(0, 0.43, 0)
+    const coneBase = new THREE.BoxGeometry(0.7, 0.06, 0.7)
+    coneBase.translate(0, 0.03, 0)
+    this.coneGeo = merge([cone, coneBase])
+
+    const log = new THREE.CylinderGeometry(0.42, 0.48, HALF_W * 2 + 2.2, 9)
+    log.rotateZ(Math.PI / 2)
+    log.translate(0, 0.42, 0)
+    const stubs: THREE.BufferGeometry[] = [log]
+    for (let i = 0; i < 4; i++) {
+      const x = -HALF_W + 0.8 + i * 1.8
+      stubs.push(tube([new THREE.Vector3(x, 0.6, 0), new THREE.Vector3(x + 0.3, 1.0, 0.3), new THREE.Vector3(x + 0.6, 1.2, 0.1)], 0.07, 4))
+    }
+    this.logGeo = merge(stubs)
+
+    const cart: THREE.BufferGeometry[] = []
+    const basket = new THREE.BoxGeometry(0.9, 0.55, 1.1, 1, 1, 1)
+    basket.translate(0, 0.75, 0)
+    cart.push(basket)
+    const handle = new THREE.CylinderGeometry(0.03, 0.03, 0.9, 5)
+    handle.rotateZ(Math.PI / 2)
+    handle.translate(0, 1.15, 0.6)
+    cart.push(handle)
+    for (const [x, z] of [[-0.38, -0.45], [0.38, -0.45], [-0.38, 0.45], [0.38, 0.45]]) {
+      const leg = new THREE.CylinderGeometry(0.025, 0.025, 0.45, 4)
+      leg.translate(x, 0.3, z)
+      const wheel = new THREE.SphereGeometry(0.08, 6, 4)
+      wheel.translate(x, 0.08, z)
+      cart.push(leg, wheel)
+    }
+    this.cartGeo = merge(cart)
+
+    const wing = new THREE.BufferGeometry()
+    wing.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, -0.12, 0.7, 0.05, 0, 0, 0, 0.18, 0.7, 0.05, 0, 0.45, -0.12, 0.12, 0, 0, 0.18], 3))
+    wing.computeVertexNormals()
+    this.batWingGeo = wing
+
     const woodTex = makeWoodTexture()
     this.wood = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.6, metalness: 0.1, color: '#9a7d74' })
+    this.fleshFloor = new THREE.MeshStandardMaterial({
+      map: woodTex,
+      roughness: 0.4,
+      color: '#b04848',
+      emissive: '#3a0004',
+      emissiveIntensity: 0.6,
+    })
     this.barrel = new THREE.MeshStandardMaterial({ map: makeBarrelTexture(), roughness: 0.5, metalness: 0.3 })
     this.runBoard = new THREE.MeshStandardMaterial({ map: makeRunBoardTexture(), roughness: 0.8 })
     this.house = new THREE.MeshStandardMaterial({ map: makeHouseTexture(), roughness: 0.9 })

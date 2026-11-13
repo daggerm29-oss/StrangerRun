@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { Zone } from './zones'
 
 export const FOG_COLOR = new THREE.Color('#3a0709')
 
@@ -15,6 +16,9 @@ const skyFrag = /* glsl */ `
 uniform float uTime;
 uniform float uFlash;
 uniform vec3 uFlashDir;
+uniform vec3 uHorizon;
+uniform vec3 uGlow;
+uniform vec3 uTop;
 varying vec3 vDir;
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p){
@@ -25,9 +29,9 @@ float fbm(vec2 p){ float v = 0.0; float a = 0.5; for (int i = 0; i < 5; i++){ v 
 void main(){
   vec3 d = normalize(vDir);
   float h = d.y;
-  vec3 horizon = vec3(0.25, 0.03, 0.04);
-  vec3 glow = vec3(0.62, 0.07, 0.06);
-  vec3 top = vec3(0.07, 0.005, 0.012);
+  vec3 horizon = uHorizon;
+  vec3 glow = uGlow;
+  vec3 top = uTop;
   vec3 col = mix(horizon, glow, smoothstep(0.0, 0.14, h));
   col = mix(col, top, smoothstep(0.18, 0.85, h));
   vec2 uv = d.xz / (max(h, 0.0) + 0.22) * 0.9;
@@ -37,7 +41,7 @@ void main(){
   float clouds = smoothstep(0.32, 0.86, c * 0.62 + c2 * 0.5);
   float above = smoothstep(-0.02, 0.12, h);
   col = mix(col, col * 0.22, clouds * above);
-  col += vec3(0.85, 0.08, 0.05) * pow(1.0 - clouds, 4.0) * 0.18 * above;
+  col += glow * 1.3 * pow(1.0 - clouds, 4.0) * 0.18 * above;
   float near = pow(max(dot(d, uFlashDir), 0.0), 6.0);
   col += vec3(1.0, 0.32, 0.3) * uFlash * (0.18 + 0.55 * (1.0 - clouds) + near * 1.4) * smoothstep(-0.1, 0.25, h);
   col = mix(col, horizon * 0.8, smoothstep(0.0, -0.12, h));
@@ -68,11 +72,12 @@ void main(){
 const sporeFrag = /* glsl */ `
 uniform sampler2D uTex;
 uniform float uFlash;
+uniform vec3 uTint;
 varying float vSeed;
 varying float vFade;
 void main(){
   vec4 t = texture2D(uTex, gl_PointCoord);
-  vec3 ember = mix(vec3(1.0, 0.18, 0.08), vec3(1.0, 0.45, 0.25), fract(vSeed * 7.0));
+  vec3 ember = mix(uTint, uTint * 0.6 + 0.4, fract(vSeed * 7.0));
   vec3 ash = vec3(0.55, 0.5, 0.5);
   vec3 col = vSeed > 0.72 ? ash : ember;
   gl_FragColor = vec4(col * (1.0 + uFlash), t.a * vFade * 0.9);
@@ -96,6 +101,9 @@ export class Environment {
   spores: THREE.Points
   sporeMat: THREE.ShaderMaterial
   flash = 0
+  lightning = 0
+  /** 0..1 strength of Vecna's curse, thickens fog */
+  curse = 0
   nextStrike = 2.5
   bolts: Bolt[] = []
   coreMat: THREE.MeshBasicMaterial
@@ -115,6 +123,9 @@ export class Environment {
         uTime: { value: 0 },
         uFlash: { value: 0 },
         uFlashDir: { value: new THREE.Vector3(0, 0.5, -1).normalize() },
+        uHorizon: { value: new THREE.Color() },
+        uGlow: { value: new THREE.Color() },
+        uTop: { value: new THREE.Color() },
       },
       side: THREE.BackSide,
       depthWrite: false,
@@ -164,6 +175,7 @@ export class Environment {
         uScale: { value: 800 },
         uTex: { value: dotTex },
         uFlash: { value: 0 },
+        uTint: { value: new THREE.Color('#ff3a18') },
       },
       transparent: true,
       depthWrite: false,
@@ -192,6 +204,23 @@ export class Environment {
       toneMapped: false,
       side: THREE.DoubleSide,
     })
+  }
+
+  /** blend sky, fog, light and particle colours between two zones */
+  applyZone(a: Zone, b: Zone, t: number) {
+    const u = this.skyMat.uniforms
+    ;(u.uHorizon.value as THREE.Color).lerpColors(a.skyHorizon, b.skyHorizon, t)
+    ;(u.uGlow.value as THREE.Color).lerpColors(a.skyGlow, b.skyGlow, t)
+    ;(u.uTop.value as THREE.Color).lerpColors(a.skyTop, b.skyTop, t)
+    const fog = this.scene.fog as THREE.FogExp2
+    fog.color.lerpColors(a.fog, b.fog, t)
+    fog.density = THREE.MathUtils.lerp(a.fogDensity, b.fogDensity, t) + this.curse * 0.012
+    ;(this.scene.background as THREE.Color).copy(fog.color)
+    this.hemi.color.lerpColors(a.hemiSky, b.hemiSky, t)
+    this.hemi.groundColor.lerpColors(a.hemiGround, b.hemiGround, t)
+    ;(this.ground.material as THREE.MeshStandardMaterial).color.lerpColors(a.ground, b.ground, t)
+    ;(this.sporeMat.uniforms.uTint.value as THREE.Color).lerpColors(a.particles, b.particles, t)
+    this.lightning = THREE.MathUtils.lerp(a.lightning, b.lightning, t)
   }
 
   setViewportHeight(h: number) {
@@ -270,8 +299,8 @@ export class Environment {
     this.sporeMat.uniforms.uTime.value = t
     this.sporeMat.uniforms.uCam.value.copy(camera.position)
 
-    this.nextStrike -= dt
-    if (this.nextStrike <= 0) {
+    this.nextStrike -= dt * this.lightning
+    if (this.nextStrike <= 0 && this.lightning > 0.05) {
       this.strike(camera, forward, 0.8 + Math.random() * 0.4)
       if (Math.random() < 0.35) setTimeout(() => this.strike(camera, forward, 0.6), 180)
       this.nextStrike = (2.2 + Math.random() * 5) / (0.8 + intensity * 0.6)
@@ -296,7 +325,7 @@ export class Environment {
     const f = this.flash * flick
     this.skyMat.uniforms.uFlash.value = f
     this.sporeMat.uniforms.uFlash.value = f
-    this.hemi.intensity = 0.6 + f * 2.4
+    this.hemi.intensity = 0.75 + f * 2.4
     this.flashLight.intensity = f * 5
   }
 }

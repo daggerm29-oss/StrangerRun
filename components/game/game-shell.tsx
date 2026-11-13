@@ -13,7 +13,7 @@ import { PauseScreen } from './pause-screen'
 import { LoadingScreen } from './loading-screen'
 import { Toasts, type ToastItem } from './toasts'
 
-const EMPTY_HUD: HudData = { score: 0, coins: 0, lives: 3, distance: 0, multiplier: 1, shield: 0, magnet: 0, danger: 0 }
+const EMPTY_HUD: HudData = { score: 0, coins: 0, lives: 3, distance: 0, multiplier: 1, shield: 0, magnet: 0, danger: 0, tk: 0, zone: 'HAWKINS', cursed: false }
 
 export function GameShell() {
   const mountRef = useRef<HTMLDivElement>(null)
