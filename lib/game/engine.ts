@@ -241,7 +241,6 @@ export class Engine {
     this.r.chase = 3.4
     this.r.roar = 1
     this.audio.roar()
-    this.audio.startMusic()
     haptic('medium')
     this.setState('playing')
   }
@@ -255,19 +254,13 @@ export class Engine {
   pause() {
     if (this.state !== 'playing') return
     this.setState('paused')
-    this.audio.stopMusic()
   }
 
   resume() {
     if (this.state !== 'paused') return
     this.audio.ensure()
-    this.audio.startMusic()
     this.last = performance.now()
     this.setState('playing')
-  }
-
-  setMuted(m: boolean) {
-    this.audio.setMuted(m)
   }
 
   private onVisibility = () => {
@@ -375,7 +368,6 @@ export class Engine {
     const r = this.r
     r.lives = 0
     this.setState('dying')
-    this.audio.stopMusic()
     haptic('error')
     this.emitHud()
     window.setTimeout(() => {
@@ -662,7 +654,6 @@ export class Engine {
     }
 
     this.track.update(r.segIdx, r.speed)
-    this.audio.intensity = Math.min(1, r.dist / 3000 + (r.chase < 6 ? 0.4 : 0))
   }
 
   // ---------------- per-frame visuals ----------------
@@ -939,7 +930,6 @@ export class Engine {
   dispose() {
     this.disposed = true
     cancelAnimationFrame(this.raf)
-    this.audio.stopMusic()
     this.audio.ctx?.close()
     this.input.dispose()
     window.removeEventListener('resize', this.resize)

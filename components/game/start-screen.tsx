@@ -1,31 +1,10 @@
-import { ArrowDown, ArrowLeftRight, ArrowUp, CornerUpRight, Trophy, Volume2, VolumeX } from 'lucide-react'
+import { ArrowDown, ArrowLeftRight, ArrowUp, CornerUpRight, Trophy } from 'lucide-react'
 import { Logo } from './logo'
 
-export function StartScreen({
-  best,
-  onStart,
-  muted,
-  onToggleMute,
-  onLeaderboard,
-}: {
-  best: number
-  onStart: () => void
-  onLeaderboard?: () => void
-  muted: boolean
-  onToggleMute: () => void
-}) {
+export function StartScreen({ best, onStart, onLeaderboard }: { best: number; onStart: () => void; onLeaderboard?: () => void }) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-between safe-top safe-bottom px-6 bg-gradient-to-b from-black/70 via-transparent to-black/85">
-      <div className="flex w-full justify-end">
-        <button
-          type="button"
-          onClick={onToggleMute}
-          aria-label={muted ? 'Unmute sound' : 'Mute sound'}
-          className="flex size-10 items-center justify-center rounded-full border border-white/15 bg-black/50 text-white"
-        >
-          {muted ? <VolumeX className="size-5" aria-hidden="true" /> : <Volume2 className="size-5" aria-hidden="true" />}
-        </button>
-      </div>
+      <div aria-hidden="true" />
 
       <div className="flex flex-col items-center gap-3 -mt-10">
         <Logo />

@@ -1,21 +1,11 @@
-import { Heart, Magnet, Pause, Shield, Sparkles, Volume2, VolumeX } from 'lucide-react'
+import { Heart, Magnet, Pause, Shield, Sparkles } from 'lucide-react'
 import type { HudData } from '@/lib/game/engine'
 
 function formatDistance(m: number) {
   return m >= 1000 ? `${(m / 1000).toFixed(1)} KM` : `${Math.floor(m)} M`
 }
 
-export function Hud({
-  hud,
-  onPause,
-  muted,
-  onToggleMute,
-}: {
-  hud: HudData
-  onPause: () => void
-  muted: boolean
-  onToggleMute: () => void
-}) {
+export function Hud({ hud, onPause }: { hud: HudData; onPause: () => void }) {
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 safe-top px-3">
       <div className="flex items-start justify-between gap-3 font-sans uppercase tracking-wide">
@@ -56,14 +46,6 @@ export function Hud({
             </p>
           </div>
           <div className="pointer-events-auto flex gap-1.5">
-            <button
-              type="button"
-              onClick={onToggleMute}
-              aria-label={muted ? 'Unmute sound' : 'Mute sound'}
-              className="flex size-10 items-center justify-center rounded-full border border-white/15 bg-black/50 text-white active:scale-95"
-            >
-              {muted ? <VolumeX className="size-5" aria-hidden="true" /> : <Volume2 className="size-5" aria-hidden="true" />}
-            </button>
             <button
               type="button"
               onClick={onPause}

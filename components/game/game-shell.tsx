@@ -6,6 +6,8 @@ import { initTelegram, loadBest, saveBest } from '@/lib/game/telegram'
 import { canUseLeaderboard, submitScore } from '@/lib/game/leaderboard-client'
 import { LeaderboardScreen } from './leaderboard-screen'
 import { mutate } from 'swr'
+import { music } from '@/lib/game/music'
+import { EnterScreen } from './enter-screen'
 import { Hud } from './hud'
 import { StartScreen } from './start-screen'
 import { GameOverScreen } from './game-over-screen'
@@ -24,7 +26,9 @@ export function GameShell() {
   const [result, setResult] = useState<GameResult | null>(null)
   const [best, setBest] = useState(0)
   const [newBest, setNewBest] = useState(false)
-  const [muted, setMuted] = useState(false)
+  const [entered, setEntered] = useState(false)
+  const [gateGone, setGateGone] = useState(false)
+  const prevState = useRef<GameState>('loading')
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [flash, setFlash] = useState<{ kind: 'hit' | 'lightning'; id: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -99,11 +103,31 @@ export function GameShell() {
     engineRef.current?.startRun()
   }, [])
 
-  const toggleMute = useCallback(() => {
-    setMuted((m) => {
-      engineRef.current?.setMuted(!m)
-      return !m
-    })
+  const enter = useCallback(() => {
+    music.enter()
+    setEntered(true)
+    window.setTimeout(() => setGateGone(true), 800)
+  }, [])
+
+  useEffect(() => {
+    const prev = prevState.current
+    prevState.current = state
+    if (!entered) return
+    if (state === 'playing') {
+      if (prev === 'paused') music.duck(false)
+      else music.shuffle('run')
+    } else if (state === 'paused') music.duck(true)
+    else if (state === 'over') music.shuffle('over')
+  }, [state, entered])
+
+  useEffect(() => {
+    if (entered && showBoard) music.shuffle('board')
+  }, [showBoard, entered])
+
+  useEffect(() => {
+    const onVisible = () => music.setVisible(document.visibilityState === 'visible')
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
 
   return (
@@ -129,7 +153,7 @@ export function GameShell() {
       />
 
       {(state === 'playing' || state === 'paused' || state === 'dying') && (
-        <Hud hud={hud} onPause={() => engineRef.current?.pause()} muted={muted} onToggleMute={toggleMute} />
+        <Hud hud={hud} onPause={() => engineRef.current?.pause()} />
       )}
       {state === 'playing' && <Toasts items={toasts} />}
 
@@ -138,8 +162,6 @@ export function GameShell() {
         <StartScreen
           best={best}
           onStart={start}
-          muted={muted}
-          onToggleMute={toggleMute}
           onLeaderboard={boardEnabled ? () => setShowBoard(true) : undefined}
         />
       )}
@@ -158,6 +180,7 @@ export function GameShell() {
         />
       )}
       {showBoard && <LeaderboardScreen onClose={() => setShowBoard(false)} />}
+      {!gateGone && <EnterScreen onEnter={enter} />}
     </main>
   )
 }
