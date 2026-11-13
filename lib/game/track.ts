@@ -3,6 +3,7 @@ import { Assets, HALF_W, LANE_W, PORTAL_S } from './props'
 import { Demodog } from './demogorgon'
 import { zoneAt, type Zone, type ZoneId } from './zones'
 import { SceneryKit } from './scenery'
+import { buildRoots, buildZombie, zombieHome, type Lurk } from './lurkers'
 
 export const DIRS = [new THREE.Vector2(0, -1), new THREE.Vector2(1, 0), new THREE.Vector2(0, 1), new THREE.Vector2(-1, 0)]
 
@@ -27,6 +28,8 @@ export type ObstacleKind =
   | 'arcade'
   | 'rock'
   | 'bats'
+  | 'roots'
+  | 'zombie'
 
 export interface Obstacle {
   kind: ObstacleKind
@@ -43,6 +46,8 @@ export interface Obstacle {
   dog?: Demodog
   dogX?: number
   dogPhase?: number
+  /** lawn ambushers (roots, zombies) that wait hidden until the runner is close */
+  lurk?: Lurk
 }
 
 export interface Coin {
@@ -287,6 +292,7 @@ export class Track {
     if (dist > 1400) types.push(['zigzag', 2.2])
     if (dist > 2000) types.push(['gapArch', 1.8], ['dogBlock', 1.8])
     const zid = seg.zone.id
+    if (zid === 'town' && dist > 120) types.push(['roots', 2.8], ['zombie', 2.8])
     if (zid === 'forest') types.push(['bats', 2.6])
     if ((zid === 'upside' || zid === 'vecna') && dist > 600) types.push(['bats', 1.8])
     if (zid === 'vecna') types.push(['zigzag', 1.5], ['gapArch', 1.5])
@@ -380,6 +386,21 @@ export class Track {
         this.add(seg, this.bats(seg, s + 12))
         this.coinLine(seg, s - 4, s + 4, freeLane, 0.55)
         used = 12
+        break
+      }
+      case 'roots': {
+        const side = pick([-1, 1])
+        this.add(seg, this.roots(seg, s + 6, side))
+        this.coinLine(seg, s - 2, s + 10, -side)
+        used = 8
+        break
+      }
+      case 'zombie': {
+        const side = pick([-1, 1])
+        const target = pick([side, 0])
+        this.add(seg, this.zombie(seg, s + 6, side, target))
+        this.coinLine(seg, s - 2, s + 10, pick(lanes.filter((l) => l !== target)))
+        used = 8
         break
       }
       case 'dogBlock': {
@@ -699,6 +720,37 @@ export class Track {
     }
     this.place(seg, g, s, lane * LANE_W)
     return { kind: 'barrels', s, depth: 0.9, lanes: [lane], clearY: 1.0, slideClears: false, object: g }
+  }
+
+  /** fleshy root erupting from a front lawn: slams down across its side lane and the centre, jumpable */
+  private roots(seg: Segment, s: number, side: number): Omit<Obstacle, 'hit'> {
+    const g = buildRoots(side, this.assets.flesh, this.assets.fleshDark)
+    return {
+      kind: 'roots',
+      s,
+      depth: 1.1,
+      lanes: [side, 0],
+      clearY: 0.85,
+      slideClears: false,
+      object: this.place(seg, g, s),
+      lurk: { side, t: -1, homeX: side * 20, toX: 0, x: side * 20 },
+    }
+  }
+
+  /** infected resident clawing out of a lawn and lunging into a lane: dodge it */
+  private zombie(seg: Segment, s: number, side: number, lane: number): Omit<Obstacle, 'hit'> {
+    const g = buildZombie(side, this.assets.fleshDark)
+    const homeX = zombieHome(side)
+    return {
+      kind: 'zombie',
+      s,
+      depth: 0.9,
+      lanes: [lane],
+      clearY: Infinity,
+      slideClears: false,
+      object: this.place(seg, g, s),
+      lurk: { side, t: -1, homeX, toX: lane * LANE_W, x: homeX },
+    }
   }
 
   private dog(seg: Segment, s: number): Omit<Obstacle, 'hit'> {
