@@ -30,7 +30,7 @@ export function GameShell() {
   const [gateGone, setGateGone] = useState(false)
   const prevState = useRef<GameState>('loading')
   const [toasts, setToasts] = useState<ToastItem[]>([])
-  const [flash, setFlash] = useState<{ kind: 'hit' | 'lightning'; id: number } | null>(null)
+  const [flash, setFlash] = useState<{ kind: 'hit' | 'lightning' | 'portal'; id: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const bestRef = useRef(0)
   const [showBoard, setShowBoard] = useState(false)
@@ -135,7 +135,7 @@ export function GameShell() {
           key={flash.id}
           aria-hidden="true"
           className={`pointer-events-none absolute inset-0 animate-out fade-out duration-500 fill-mode-forwards ${
-            flash.kind === 'hit' ? 'bg-blood/45' : 'bg-[#ff9a9a]/10'
+            flash.kind === 'hit' ? 'bg-blood/45' : flash.kind === 'portal' ? 'bg-[#ff2a2a]/80 duration-1000' : 'bg-[#ff9a9a]/10'
           }`}
         />
       )}
