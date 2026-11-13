@@ -115,14 +115,10 @@ export function GameShell() {
     if (!entered) return
     if (state === 'playing') {
       if (prev === 'paused') music.duck(false)
-      else music.shuffle('run')
+      else music.playRunTheme()
     } else if (state === 'paused') music.duck(true)
     else if (state === 'over') music.shuffle('over')
   }, [state, entered])
-
-  useEffect(() => {
-    if (entered && showBoard) music.shuffle('board')
-  }, [showBoard, entered])
 
   useEffect(() => {
     const onVisible = () => music.setVisible(document.visibilityState === 'visible')
