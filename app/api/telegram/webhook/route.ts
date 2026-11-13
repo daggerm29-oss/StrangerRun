@@ -1,6 +1,8 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { getTop } from '@/lib/leaderboard'
 import { GLOBAL_CHAT, escapeHtml, miniAppLink, tgApi } from '@/lib/telegram-server'
+
+export const maxDuration = 30
 
 interface Update {
   message?: {
@@ -74,9 +76,61 @@ async function sendLeaderboard(chatId: number, isGroup: boolean) {
     const km = (e.distance / 1000).toFixed(2)
     return `${MEDALS[i] ?? `${e.rank}.`} <b>${escapeHtml(e.name)}</b> - ${e.score.toLocaleString('en-US')} (${km} km)`
   })
-  await tgApi('sendMessage', {
+  const body = `<b>STRANGER RUN</b>\n<i>Hall of Survivors</i>\n\n${lines.join('\n')}\n\n`
+
+  const frames = chaseFrames()
+  const sent = await tgApi<{ message_id: number }>('sendMessage', {
     chat_id: chatId,
-    text: `<b>Stranger Run leaderboard</b>\n\n${lines.join('\n')}`,
+    text: body + frames[0],
     parse_mode: 'HTML',
   })
+  if (!sent) return
+
+  // the footer keeps rewriting itself: the Demogorgon closes in on the runner, then the lights die
+  after(async () => {
+    for (let i = 1; i < frames.length; i++) {
+      await new Promise((r) => setTimeout(r, FRAME_MS))
+      const ok = await tgApi('editMessageText', {
+        chat_id: chatId,
+        message_id: sent.message_id,
+        text: body + frames[i],
+        parse_mode: 'HTML',
+      })
+      if (!ok) break
+    }
+  })
+}
+
+const FRAME_MS = 1300
+const TRACK = 12
+const CAPTIONS = [
+  'something is out there...',
+  'it heard you...',
+  'don&#39;t look back...',
+  'RUN!',
+  'it is getting closer...',
+  'the lights are failing...',
+  'it is right behind you',
+  'too late.',
+]
+
+/** Footer frames: `👹` chases `🏃` along a track, gap shrinking, ending with the lights out and a call to play. */
+function chaseFrames() {
+  const frames: string[] = []
+  const lamp = ['💡', '💡', '🔦', '💡', '🔅', '💡', '🔅', '🌑']
+  for (let i = 0; i < CAPTIONS.length; i++) {
+    const gap = Math.max(1, 7 - i)
+    const demo = Math.min(i * 1, TRACK - 2)
+    const runner = Math.min(TRACK - 1, demo + gap)
+    const cells: string[] = Array.from({ length: TRACK }, (_, c) => (c === demo ? '👹' : c === runner ? '🏃' : '·'))
+    const last = i === CAPTIONS.length - 1
+    if (last) {
+      const caught = Math.min(TRACK - 2, demo + 1)
+      cells.fill('·')
+      cells[caught] = '💥'
+    }
+    const track = cells.join(' ')
+    frames.push(`${lamp[i]} <code>${track}</code>\n<i>${CAPTIONS[i]}</i>${last ? '\n\n/play  to try again' : ''}`)
+  }
+  return frames
 }

@@ -18,12 +18,15 @@ export async function GET(req: Request) {
     allowed_updates: ['message'],
     drop_pending_updates: true,
   })
-  const commands = await tgApi('setMyCommands', {
-    commands: [
-      { command: 'play', description: 'Play Stranger Run' },
-      { command: 'leaderboard', description: 'Show the top 10 in this chat' },
-    ],
-  })
+  // Telegram shows the most specific scope, so register the list for groups and private chats explicitly
+  // (a list set earlier through BotFather in a narrower scope would otherwise hide /leaderboard).
+  const commands = [
+    { command: 'play', description: 'Play Stranger Run' },
+    { command: 'leaderboard', description: 'Show the top 10 in this chat' },
+  ]
+  const scopes = [{ type: 'default' }, { type: 'all_private_chats' }, { type: 'all_group_chats' }]
+  const results = await Promise.all(scopes.map((scope) => tgApi('setMyCommands', { commands, scope })))
+  const commandsSet = results.every(Boolean)
 
-  return NextResponse.json({ ok: !!webhook && !!commands, webhookUrl, webhookSet: !!webhook, commandsSet: !!commands })
+  return NextResponse.json({ ok: !!webhook && commandsSet, webhookUrl, webhookSet: !!webhook, commandsSet })
 }
