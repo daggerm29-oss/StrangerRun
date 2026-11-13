@@ -150,12 +150,31 @@ export class Engine {
   private tmpQ = new THREE.Quaternion()
   private tmpS = new THREE.Vector3()
   private up = new THREE.Vector3(0, 1, 0)
+  private chasePos = new THREE.Vector3()
+  private chaseLook = new THREE.Vector3()
+  private menuPos = new THREE.Vector3()
+  private menuLook = new THREE.Vector3()
+  private side = new THREE.Vector3()
+  private maxPR = 1
+  private pr = 1
+  private frameMs = 16.7
+  private qualityCool = 3
+  private upscaleCool = 15
 
   constructor(container: HTMLElement, cb: EngineCallbacks) {
     this.container = container
     this.cb = cb
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75))
+    // phones: no MSAA and a lower pixel ratio ceiling; the resolution then adapts to the measured frame time
+    const mobile = window.matchMedia?.('(pointer: coarse)').matches ?? false
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: !mobile,
+      alpha: false,
+      stencil: false,
+      powerPreference: 'high-performance',
+    })
+    this.maxPR = Math.min(window.devicePixelRatio || 1, mobile ? 1.4 : 1.75)
+    this.pr = this.maxPR
+    this.renderer.setPixelRatio(this.pr)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.toneMappingExposure = 1.6
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -878,19 +897,20 @@ export class Engine {
 
     // portal dive: drop to the runner's shoulder and close in so the camera follows her through the rift
     const fx = this.portalFx
-    const chasePos = new THREE.Vector3(p.x, 0, p.z).addScaledVector(fwd, -6.3 + 3.6 * fx)
+    const chasePos = this.chasePos.set(p.x, 0, p.z).addScaledVector(fwd, -6.3 + 3.6 * fx)
     chasePos.y = 3.3 - 1.75 * fx + yOff
-    const chaseLook = new THREE.Vector3(p.x, 1.1 + 0.3 * fx + yOff * 0.6, p.z).addScaledVector(fwd, 6)
+    const chaseLook = this.chaseLook.set(p.x, 1.1 + 0.3 * fx + yOff * 0.6, p.z).addScaledVector(fwd, 6)
 
     if (this.state === 'menu' || this.state === 'loading') this.intro = 0
     else this.intro = Math.min(1, this.intro + dt * 1.1)
 
     const a = this.time * 0.25
-    const side = new THREE.Vector3(-fwd.z, 0, fwd.x)
-    const menuPos = new THREE.Vector3(p.x, 1.4, p.z)
+    const side = this.side.set(-fwd.z, 0, fwd.x)
+    const menuPos = this.menuPos
+      .set(p.x, 1.4, p.z)
       .addScaledVector(fwd, 3.6)
       .addScaledVector(side, Math.sin(a) * 1.6)
-    const menuLook = new THREE.Vector3(p.x, 1.25, p.z).addScaledVector(fwd, -2.5)
+    const menuLook = this.menuLook.set(p.x, 1.25, p.z).addScaledVector(fwd, -2.5)
 
     const t = this.intro * this.intro * (3 - 2 * this.intro)
     this.camPos.copy(menuPos).lerp(chasePos, t)
@@ -974,9 +994,29 @@ export class Engine {
     })
   }
 
+  /** keeps the frame rate smooth: render fewer pixels when frames run long, and creep back up when there is headroom */
+  private adaptQuality(ms: number) {
+    if (this.state !== 'playing') return
+    this.frameMs += (Math.min(ms, 80) - this.frameMs) * 0.06
+    this.qualityCool -= ms / 1000
+    this.upscaleCool -= ms / 1000
+    if (this.qualityCool > 0) return
+    if (this.frameMs > 20 && this.pr > 0.7) {
+      this.pr = Math.max(0.7, this.pr * 0.86)
+      this.upscaleCool = 15
+    } else if (this.frameMs < 17.5 && this.pr < this.maxPR && this.upscaleCool <= 0) {
+      this.pr = Math.min(this.maxPR, this.pr * 1.08)
+      this.upscaleCool = 15
+    } else return
+    this.qualityCool = 1.5
+    this.renderer.setPixelRatio(this.pr)
+    this.resize()
+  }
+
   private loop = (now: number) => {
     if (this.disposed) return
     this.raf = requestAnimationFrame(this.loop)
+    if (this.last) this.adaptQuality(now - this.last)
     const dt = Math.min(1 / 30, this.last ? (now - this.last) / 1000 : 0.016)
     this.last = now
     if (this.state === 'paused') {
@@ -999,7 +1039,7 @@ export class Engine {
     this.portal.update(dt)
     this.env.update(dt, this.time, this.camera, fwd, Math.min(1, this.r.dist / 3000))
     this.hudT += dt
-    if (this.hudT > 0.1 && this.state === 'playing') {
+    if (this.hudT > 0.2 && this.state === 'playing') {
       this.hudT = 0
       this.emitHud()
     }

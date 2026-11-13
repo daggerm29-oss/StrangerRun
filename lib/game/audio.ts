@@ -96,90 +96,170 @@ export class GameAudio {
     return curve
   }
 
-  /** layered Demogorgon shriek: distorted throat growl, wet flutter, a piercing screech and ragged breath */
+  private reverb: ConvolverNode | null = null
+
+  /** cheap cavern: decaying stereo noise, built once and reused for every roar */
+  private cavern() {
+    const ctx = this.ctx!
+    if (this.reverb) return this.reverb
+    const len = Math.floor(ctx.sampleRate * 1.7)
+    const buf = ctx.createBuffer(2, len, ctx.sampleRate)
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch)
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6)
+    }
+    this.reverb = ctx.createConvolver()
+    this.reverb.buffer = buf
+    this.reverb.connect(this.sfx)
+    return this.reverb
+  }
+
+  /**
+   * Demogorgon roar built to be disturbing: a slamming sub impact, a gurgling throat growl that tears upward,
+   * two dissonant (tritone) screams that wail and break, ragged breath, and a second, shorter shriek that
+   * answers the first. Everything is crushed through a compressor so it stays loud and aggressive on phone speakers.
+   */
   roar() {
     const ctx = this.ctx
     if (!ctx) return
     const t = ctx.currentTime
-    const dur = 1.9
+    const dur = 2.9
+    const oscs: OscillatorNode[] = []
+    const start = (o: OscillatorNode, from: number, to: number) => {
+      o.start(from)
+      o.stop(to)
+      oscs.push(o)
+    }
+
     const out = ctx.createGain()
     out.gain.setValueAtTime(0.001, t)
-    out.gain.exponentialRampToValueAtTime(0.9, t + 0.12)
-    out.gain.setValueAtTime(0.9, t + 0.9)
+    out.gain.exponentialRampToValueAtTime(2.0, t + 0.05)
+    out.gain.setValueAtTime(2.0, t + 1.2)
     out.gain.exponentialRampToValueAtTime(0.001, t + dur)
-    out.connect(this.sfx)
+    const comp = ctx.createDynamicsCompressor()
+    comp.threshold.value = -26
+    comp.knee.value = 8
+    comp.ratio.value = 14
+    comp.attack.value = 0.002
+    comp.release.value = 0.3
+    out.connect(comp)
+    comp.connect(this.sfx)
+    const wet = ctx.createGain()
+    wet.gain.value = 0.55
+    comp.connect(wet)
+    wet.connect(this.cavern())
 
-    const shaper = ctx.createWaveShaper()
-    shaper.curve = this.distortion(40)
-    shaper.oversample = '2x'
-    const formant = ctx.createBiquadFilter()
-    formant.type = 'bandpass'
-    formant.Q.value = 1.4
-    formant.frequency.setValueAtTime(380, t)
-    formant.frequency.linearRampToValueAtTime(950, t + 0.35)
-    formant.frequency.exponentialRampToValueAtTime(260, t + dur)
-    const flutter = ctx.createGain()
-    flutter.gain.value = 0.55
-    const lfo = ctx.createOscillator()
-    lfo.type = 'square'
-    lfo.frequency.setValueAtTime(22, t)
-    lfo.frequency.linearRampToValueAtTime(31, t + dur)
-    const lfoDepth = ctx.createGain()
-    lfoDepth.gain.value = 0.45
-    lfo.connect(lfoDepth)
-    lfoDepth.connect(flutter.gain)
-    shaper.connect(formant)
-    formant.connect(flutter)
-    flutter.connect(out)
-    const oscs: OscillatorNode[] = [lfo]
+    const crush = (amount: number) => {
+      const s = ctx.createWaveShaper()
+      s.curve = this.distortion(amount)
+      s.oversample = '2x'
+      return s
+    }
+
+    // throat growl: low saws through hard distortion, a sweeping vowel and a fast gurgle
+    const growl = crush(120)
+    const vowel = ctx.createBiquadFilter()
+    vowel.type = 'bandpass'
+    vowel.Q.value = 2.4
+    vowel.frequency.setValueAtTime(260, t)
+    vowel.frequency.exponentialRampToValueAtTime(1250, t + 0.45)
+    vowel.frequency.exponentialRampToValueAtTime(190, t + dur)
+    const gurgle = ctx.createGain()
+    gurgle.gain.value = 0.5
+    const gLfo = ctx.createOscillator()
+    gLfo.type = 'square'
+    gLfo.frequency.setValueAtTime(19, t)
+    gLfo.frequency.linearRampToValueAtTime(43, t + dur)
+    const gDepth = ctx.createGain()
+    gDepth.gain.value = 0.5
+    gLfo.connect(gDepth)
+    gDepth.connect(gurgle.gain)
+    growl.connect(vowel)
+    vowel.connect(gurgle)
+    gurgle.connect(out)
+    start(gLfo, t, t + dur + 0.1)
     for (const [f, detune] of [
-      [68, 0],
-      [71, 14],
-      [102, -9],
+      [52, 0],
+      [55, 21],
+      [83, -17],
+      [110, 9],
     ]) {
       const o = ctx.createOscillator()
       o.type = 'sawtooth'
       o.detune.value = detune
-      o.frequency.setValueAtTime(f * 0.8, t)
-      o.frequency.linearRampToValueAtTime(f * 1.7, t + 0.3)
-      o.frequency.exponentialRampToValueAtTime(f * 0.6, t + dur)
+      o.frequency.setValueAtTime(f * 0.7, t)
+      o.frequency.exponentialRampToValueAtTime(f * 2.1, t + 0.35)
+      o.frequency.linearRampToValueAtTime(f * 1.3, t + 1.4)
+      o.frequency.exponentialRampToValueAtTime(f * 0.5, t + dur)
       const g = ctx.createGain()
-      g.gain.value = 0.35
+      g.gain.value = 0.38
       o.connect(g)
-      g.connect(shaper)
-      oscs.push(o)
+      g.connect(growl)
+      start(o, t, t + dur + 0.1)
     }
 
-    const screech = ctx.createOscillator()
-    screech.type = 'sawtooth'
-    screech.frequency.setValueAtTime(720, t + 0.1)
-    screech.frequency.linearRampToValueAtTime(1500, t + 0.45)
-    screech.frequency.exponentialRampToValueAtTime(520, t + 1.5)
-    const vib = ctx.createOscillator()
-    vib.frequency.value = 11
-    const vibDepth = ctx.createGain()
-    vibDepth.gain.value = 60
-    vib.connect(vibDepth)
-    vibDepth.connect(screech.frequency)
-    const screechF = ctx.createBiquadFilter()
-    screechF.type = 'bandpass'
-    screechF.frequency.value = 1800
-    screechF.Q.value = 3
-    const screechG = ctx.createGain()
-    screechG.gain.setValueAtTime(0.001, t)
-    screechG.gain.exponentialRampToValueAtTime(0.16, t + 0.3)
-    screechG.gain.exponentialRampToValueAtTime(0.001, t + 1.5)
-    screech.connect(screechF)
-    screechF.connect(screechG)
-    screechG.connect(out)
-    oscs.push(screech, vib)
-
-    for (const o of oscs) {
-      o.start(t)
-      o.stop(t + dur + 0.1)
+    // two dissonant screams that wail up, waver and fall apart
+    const scream = (at: number, len: number, base: number, level: number) => {
+      const shaper = crush(40)
+      const body = ctx.createBiquadFilter()
+      body.type = 'bandpass'
+      body.frequency.value = 2300
+      body.Q.value = 1.8
+      const trem = ctx.createGain()
+      trem.gain.value = 0.55
+      const tLfo = ctx.createOscillator()
+      tLfo.type = 'square'
+      tLfo.frequency.value = 58
+      const tDepth = ctx.createGain()
+      tDepth.gain.value = 0.45
+      tLfo.connect(tDepth)
+      tDepth.connect(trem.gain)
+      const env = ctx.createGain()
+      env.gain.setValueAtTime(0.001, at)
+      env.gain.exponentialRampToValueAtTime(level, at + 0.12)
+      env.gain.setValueAtTime(level, at + len * 0.6)
+      env.gain.exponentialRampToValueAtTime(0.001, at + len)
+      const vib = ctx.createOscillator()
+      vib.frequency.value = 9
+      const vibDepth = ctx.createGain()
+      vibDepth.gain.value = base * 0.09
+      vib.connect(vibDepth)
+      for (const ratio of [1, 1.414, 1.06]) {
+        const o = ctx.createOscillator()
+        o.type = 'sawtooth'
+        o.frequency.setValueAtTime(base * ratio * 0.8, at)
+        o.frequency.exponentialRampToValueAtTime(base * ratio * 2.6, at + len * 0.28)
+        o.frequency.linearRampToValueAtTime(base * ratio * 1.9, at + len * 0.6)
+        o.frequency.exponentialRampToValueAtTime(base * ratio * 0.7, at + len)
+        vibDepth.connect(o.frequency)
+        o.connect(shaper)
+        start(o, at, at + len + 0.1)
+      }
+      shaper.connect(body)
+      body.connect(trem)
+      trem.connect(env)
+      env.connect(out)
+      start(tLfo, at, at + len + 0.1)
+      start(vib, at, at + len + 0.1)
     }
-    this.noiseBurst(1.5, 'bandpass', 2400, 350, 0.32)
-    this.noiseBurst(1.8, 'lowpass', 500, 50, 0.5)
+    scream(t + 0.05, 1.7, 310, 0.34)
+    scream(t + 1.05, 1.5, 420, 0.28)
+
+    // sub slam on impact, then a rumbling aftershock
+    const sub = ctx.createOscillator()
+    sub.type = 'sine'
+    sub.frequency.setValueAtTime(95, t)
+    sub.frequency.exponentialRampToValueAtTime(24, t + 0.9)
+    const subG = ctx.createGain()
+    subG.gain.setValueAtTime(1.3, t)
+    subG.gain.exponentialRampToValueAtTime(0.001, t + 1.1)
+    sub.connect(subG)
+    subG.connect(out)
+    start(sub, t, t + 1.2)
+
+    this.noiseBurst(1.6, 'bandpass', 3600, 500, 0.5)
+    this.noiseBurst(2.4, 'lowpass', 600, 45, 0.8)
+    this.noiseBurst(0.9, 'highpass', 5200, 3000, 0.22, 1.0)
   }
 
   /** jumpscare stinger: earth ripping open, a shrill screech, and a guttural groan for zombies */

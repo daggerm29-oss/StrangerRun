@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Engine, GameResult, GameState, HudData } from '@/lib/game/engine'
 import { initTelegram, loadBest, saveBest } from '@/lib/game/telegram'
-import { canUseLeaderboard, submitScore } from '@/lib/game/leaderboard-client'
+import { canUseLeaderboard, startPlaying, stopPlaying, submitScore } from '@/lib/game/leaderboard-client'
 import { LeaderboardScreen } from './leaderboard-screen'
 import { mutate } from 'swr'
 import { music } from '@/lib/game/music'
@@ -101,6 +101,7 @@ export function GameShell() {
     setResult(null)
     setHud(EMPTY_HUD)
     engineRef.current?.startRun()
+    startPlaying()
   }, [])
 
   const enter = useCallback(() => {
@@ -123,7 +124,11 @@ export function GameShell() {
   useEffect(() => {
     const onVisible = () => music.setVisible(document.visibilityState === 'visible')
     document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
+    window.addEventListener('pagehide', stopPlaying)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('pagehide', stopPlaying)
+    }
   }, [])
 
   return (

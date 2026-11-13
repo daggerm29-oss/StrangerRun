@@ -1,7 +1,8 @@
 import { and, desc, eq, gt, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { scores } from '@/lib/db/schema'
-import { GLOBAL_CHAT, escapeHtml, tgApi, type TgUser } from '@/lib/telegram-server'
+import { GLOBAL_CHAT, tgApi, type TgUser } from '@/lib/telegram-server'
+import { finishStatus, verifyStatus } from '@/lib/play-status'
 
 export interface LeaderboardEntry {
   rank: number
@@ -55,13 +56,13 @@ export async function getLeaderboard(chatId: string, user: TgUser): Promise<Lead
 }
 
 /** Only players who are actually in the group may post to its board (the group id comes from a link anyone can edit). */
-async function isGroupMember(chatId: string, userId: number) {
+export async function isGroupMember(chatId: string, userId: number) {
   if (chatId === GLOBAL_CHAT) return true
   const member = await tgApi<{ status: string }>('getChatMember', { chat_id: chatId, user_id: userId })
   return !!member && !['left', 'kicked'].includes(member.status)
 }
 
-export async function submitScore(chatId: string, user: TgUser, score: number, distance: number) {
+export async function submitScore(chatId: string, user: TgUser, score: number, distance: number, status?: unknown) {
   const userId = String(user.id)
   if (!(await isGroupMember(chatId, user.id))) return null
 
@@ -96,26 +97,7 @@ export async function submitScore(chatId: string, user: TgUser, score: number, d
     })
 
   const newRecord = score > 0 && (!previousTop || score > previousTop.bestScore)
-  if (newRecord && chatId !== GLOBAL_CHAT) await announceRecord(chatId, user, score, previousTop)
+  await finishStatus(chatId, user, score, newRecord, verifyStatus(chatId, userId, status))
 
   return { ...(await getLeaderboard(chatId, user)), newRecord }
-}
-
-async function announceRecord(
-  chatId: string,
-  user: TgUser,
-  score: number,
-  previous: { firstName: string; bestScore: number; userId: string } | undefined,
-) {
-  const name = `<a href="tg://user?id=${user.id}">${escapeHtml(user.first_name)}</a>`
-  const fmt = (n: number) => n.toLocaleString('en-US')
-  let text: string
-  if (!previous) {
-    text = `🏆 <b>${name}</b> set the first high score in Stranger Run: <b>${fmt(score)}</b>!\nThink you can beat it? Send /play`
-  } else if (previous.userId === String(user.id)) {
-    text = `🏆 <b>${name}</b> just broke their own record with <b>${fmt(score)}</b>!\nSend /play to take the crown.`
-  } else {
-    text = `🏆 <b>${name}</b> just took the #1 spot with <b>${fmt(score)}</b>, beating ${escapeHtml(previous.firstName)}'s ${fmt(previous.bestScore)}!\nSend /play to fight for it back.`
-  }
-  await tgApi('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML', disable_notification: false })
 }
