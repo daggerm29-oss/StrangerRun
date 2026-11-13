@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { Environment } from './environment'
-import { Assets, HALF_W, LANE_W } from './props'
+import { Assets, HALF_W, LANE_W, PORTAL_S } from './props'
 import { Track, type Segment, type Obstacle } from './track'
 import { Player } from './player'
 import { Demogorgon } from './demogorgon'
@@ -11,8 +11,8 @@ import { makeDotTexture, makeShadowTexture } from './textures'
 import { ZONES } from './zones'
 import { Portal } from './portal'
 
-/** where along a new map's first segment its portal stands: just past the corner, before any obstacles */
-const PORTAL_S = HALF_W + 6
+/** distance before the rift where it takes hold: the runner is pulled into the centre lane and the camera dives in */
+const PORTAL_PULL = 24
 
 export type GameState = 'loading' | 'menu' | 'playing' | 'paused' | 'dying' | 'over'
 
@@ -115,6 +115,10 @@ export class Engine {
   portal!: Portal
   /** segment index hosting the next portal, -1 when none is placed */
   portalSeg = -1
+  /** 0..1 how deep the camera is diving into the rift */
+  portalFx = 0
+  /** lane changes are locked while the rift pulls the runner in */
+  portalLock = false
   zoneFrom = 0
   zoneTo = 0
   zoneT = 1
@@ -249,6 +253,8 @@ export class Engine {
     this.player.pivot.rotation.set(0, 0, 0)
     this.portal?.hide()
     this.portalSeg = -1
+    this.portalFx = 0
+    this.portalLock = false
     this.zoneFrom = 0
     this.zoneTo = 0
     this.zoneT = 1
@@ -322,6 +328,7 @@ export class Engine {
       if (this.tryTurn(dir)) return
       const seg = this.track.get(r.segIdx)!
       if (seg.turn === dir && seg.length - r.s < 22) r.pendingTurn = { dir, t: 0.45 }
+      if (this.portalLock) return
       const laneDir = r.curseT > 0 ? -dir : dir
       r.lane = THREE.MathUtils.clamp(r.lane + laneDir, -1, 1)
     }
@@ -371,6 +378,7 @@ export class Engine {
     const r = this.r
     const host = this.track.get(this.portalSeg)
     this.portalSeg = -1
+    this.portalLock = false
     this.portal.pass()
     if (!host) return
     const zi = ZONES.indexOf(host.zone)
@@ -486,16 +494,28 @@ export class Engine {
       const next = this.track.segments.find((sg) => sg.idx > r.segIdx && sg.zone !== ZONES[r.zone])
       if (next) {
         this.portalSeg = next.idx
-        this.portal.place(next.toWorld(PORTAL_S, 0, 0, this.tmp), next.yaw)
+        this.portal.place(next.toWorld(PORTAL_S, 0, 0, this.tmp), next.yaw, next.zone.id)
       }
     }
+    let pullTarget = 0
     if (this.portalSeg >= 0) {
       const cur = this.track.get(r.segIdx)!
       const ahead =
         this.portalSeg === r.segIdx ? PORTAL_S - r.s : this.portalSeg === r.segIdx + 1 ? cur.length - r.s + PORTAL_S : Infinity
-      if (ahead < 75) this.portal.open()
+      if (ahead < 90) this.portal.open()
+      if (this.portalSeg === r.segIdx && ahead < PORTAL_PULL) {
+        if (!this.portalLock) {
+          this.portalLock = true
+          this.cb.onToast('THE RIFT PULLS YOU IN', 'red')
+          haptic('medium')
+        }
+        r.lane = 0
+        pullTarget = THREE.MathUtils.smoothstep(1 - ahead / PORTAL_PULL, 0, 1)
+      }
       if (ahead <= 0) this.enterPortal()
     }
+    // dive in quickly, ease back out slowly once through so the camera never backs out through the wall
+    this.portalFx += (pullTarget - this.portalFx) * Math.min(1, dt * (pullTarget > this.portalFx ? 6 : 1.4))
 
     // Vecna's curse: distorts the world and reverses lane controls
     r.curseT = Math.max(0, r.curseT - dt)
@@ -818,9 +838,11 @@ export class Engine {
     const p = this.player.root.position
     const yOff = Math.max(-3, r.y * 0.35)
 
-    const chasePos = new THREE.Vector3(p.x, 0, p.z).addScaledVector(fwd, -6.3)
-    chasePos.y = 3.3 + yOff
-    const chaseLook = new THREE.Vector3(p.x, 1.1 + yOff * 0.6, p.z).addScaledVector(fwd, 6)
+    // portal dive: drop to the runner's shoulder and close in so the camera follows her through the rift
+    const fx = this.portalFx
+    const chasePos = new THREE.Vector3(p.x, 0, p.z).addScaledVector(fwd, -6.3 + 3.6 * fx)
+    chasePos.y = 3.3 - 1.75 * fx + yOff
+    const chaseLook = new THREE.Vector3(p.x, 1.1 + 0.3 * fx + yOff * 0.6, p.z).addScaledVector(fwd, 6)
 
     if (this.state === 'menu' || this.state === 'loading') this.intro = 0
     else this.intro = Math.min(1, this.intro + dt * 1.1)
@@ -847,7 +869,8 @@ export class Engine {
     const curse = Math.min(1, r.curseT / 0.6) * Math.min(1, (CURSE_TIME - r.curseT + 0.01) / 0.4)
     this.env.curse = curse
     if (curse > 0) this.camera.rotateZ(Math.sin(this.time * 2.4) * 0.16 * curse)
-    const targetFov = 60 + Math.min(1, (r.speed - 12) / 20) * 12 * t + Math.sin(this.time * 4.5) * 7 * curse
+    const targetFov = 60 + Math.min(1, (r.speed - 12) / 20) * 12 * t + Math.sin(this.time * 4.5) * 7 * curse + 20 * fx * t
+    if (fx > 0.01) this.camera.rotateZ(Math.sin(this.time * 7) * 0.05 * fx)
     this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, dt * 3)
     this.camera.updateProjectionMatrix()
 
