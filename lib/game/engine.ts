@@ -193,7 +193,7 @@ export class Engine {
     }
     this.loop(performance.now())
     await Promise.all([
-      this.player.load('/models/fashion_girl.glb', (p) => this.cb.onProgress(p)),
+      this.player.load('/models/runner.glb', (p) => this.cb.onProgress(p)),
       this.demo.load('/models/demogorgon.glb'),
       this.portal.load('/models/portal.glb'),
     ])
@@ -245,7 +245,7 @@ export class Engine {
     this.trail = []
     this.particles = []
     this.intro = 0
-    this.player.uniforms.uPhase.value = 0
+    this.player.reset()
     this.player.pivot.rotation.set(0, 0, 0)
     this.portal?.hide()
     this.portalSeg = -1
@@ -307,12 +307,14 @@ export class Engine {
         r.vy = JUMP_V
         r.y = 0.001
         r.slideT = 0
+        this.player.play('jump', { duration: (2 * JUMP_V) / GRAVITY, restart: true })
         this.audio.jump()
         haptic('light')
       }
     } else if (a === 'down') {
       if (r.y > 0.001) r.vy = -22
       r.slideT = SLIDE_TIME
+      this.player.play('slide', { duration: SLIDE_TIME * 1.35, restart: true })
       this.audio.slide()
       haptic('light')
     } else {
@@ -702,8 +704,8 @@ export class Engine {
   // ---------------- per-frame visuals ----------------
   private animatePlayer(dt: number) {
     const r = this.r
-    const u = this.player.uniforms
-    const pivot = this.player.pivot
+    const player = this.player
+    const pivot = player.pivot
     const seg = this.track.get(r.segIdx)!
     const playing = this.state === 'playing' || this.state === 'paused'
     const dying = this.state === 'dying' || this.state === 'over'
@@ -712,41 +714,27 @@ export class Engine {
     this.playerYaw += shortAngle(this.playerYaw, seg.yaw) * Math.min(1, dt * 14)
     this.player.root.rotation.y = this.playerYaw
 
-    let lean = -0.12
-    let bob = 0
+    // skeletal clips carry the body motion; the pivot only adds lane-change roll, stumble and the death fall
+    let lean = 0
+    const bob = 0
     let roll = 0
     let px = 0
-    // target pose for this frame; uniforms ease toward it so jumps, slides and landings blend instead of snapping
-    const pose = { leg: 0.8, arm: 0.75, knee: 1.4, tuck: 0, twist: 0.16 }
-    const ph = u.uPhase.value
     if (this.state === 'menu' || this.state === 'loading') {
-      u.uPhase.value = this.time * 1.4
-      Object.assign(pose, { leg: 0.06, arm: 0.08, knee: 0.1, tuck: 0, twist: 0.02 })
-      lean = 0
-      bob = Math.sin(this.time * 2) * 0.01
+      player.play('idle')
     } else if (dying) {
-      Object.assign(pose, { leg: u.uLegAmp.value * 0.9, arm: 0.9, knee: 0.4, tuck: 0, twist: 0 })
+      player.freeze()
       lean = 1.2
-      bob = 0
     } else if (playing) {
       const airborne = r.y > 0.05 || r.fallT > 0
-      // cadence rises with speed but strides lengthen too, so fast running never looks like spinning legs
-      if (this.state === 'playing') u.uPhase.value += dt * (4.2 + r.speed * 0.33)
+      const m = player.currentMotion
       if (r.slideT > 0) {
-        Object.assign(pose, { leg: 0.08, arm: 0.15, knee: 0.4, tuck: 0.35, twist: 0 })
-        lean = 1.15
-        bob = 0.18
+        if (m !== 'slide') player.play('slide', { duration: SLIDE_TIME * 1.35 })
       } else if (airborne) {
-        Object.assign(pose, { leg: 0.35, arm: 0.55, knee: 0.85, tuck: 0.4, twist: 0.06 })
-        lean = -0.18
+        if (m !== 'jump' && m !== 'fall') player.play('fall')
       } else {
-        const stride = Math.min(1, r.speed / 30)
-        Object.assign(pose, { leg: 0.7 + stride * 0.2, arm: 0.65 + stride * 0.2, knee: 1.25 + stride * 0.3, tuck: 0, twist: 0.14 + stride * 0.06 })
-        const impact = Math.abs(Math.sin(ph))
-        bob = (impact * 0.6 + (0.5 - 0.5 * Math.cos(2 * ph)) * 0.4) * 0.085
-        lean = -0.2 - stride * 0.06 + Math.cos(2 * ph) * 0.025
-        roll = Math.sin(ph) * 0.035
-        px = Math.sin(ph) * 0.02
+        player.play('run')
+        // cadence rises gently with speed so feet keep pace with the track
+        player.setLoopSpeed(0.95 + Math.min(1, r.speed / 30) * 0.35)
       }
       roll += (r.lane * LANE_W - r.x) * -0.09
       if (r.stumbleT > 0) {
@@ -754,12 +742,7 @@ export class Engine {
         px += Math.sin(this.time * 20) * 0.08 * r.stumbleT
       }
     }
-    const ease = 1 - Math.exp(-dt * 11)
-    u.uLegAmp.value += (pose.leg - u.uLegAmp.value) * ease
-    u.uArmAmp.value += (pose.arm - u.uArmAmp.value) * ease
-    u.uKnee.value += (pose.knee - u.uKnee.value) * ease
-    u.uTuck.value += (pose.tuck - u.uTuck.value) * ease
-    u.uTwist.value += (pose.twist - u.uTwist.value) * ease
+    if (this.state !== 'paused') player.update(dt)
     pivot.rotation.x += (lean - pivot.rotation.x) * Math.min(1, dt * 14)
     pivot.rotation.z += (roll - pivot.rotation.z) * Math.min(1, dt * 10)
     pivot.position.y += (bob - pivot.position.y) * Math.min(1, dt * 25)

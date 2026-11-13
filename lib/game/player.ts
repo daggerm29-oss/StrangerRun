@@ -1,69 +1,45 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
+
+export type Motion = 'idle' | 'run' | 'jump' | 'slide' | 'fall'
+
+const HIPS = 'mixamorig:Hips'
 
 /**
- * The supplied GLB is a static T-pose with no animation clips, so the run cycle
- * is produced by deforming vertices in the vertex shader (arms lowered and
- * swung, legs and knees articulated around hip/knee pivots in model space, cm).
+ * Clip indices inside runner.glb. Only "Running" and "Walking" are named; the
+ * jump and slide clips were identified from their hip trajectories.
  */
-const deformHeader = /* glsl */ `
-uniform float uPhase;
-uniform float uLegAmp;
-uniform float uArmAmp;
-uniform float uKnee;
-uniform float uTuck;
-uniform float uArmDown;
-uniform float uElbow;
-uniform float uTwist;
-vec2 rot2(vec2 v, float a){ float c = cos(a); float s = sin(a); return vec2(c*v.x - s*v.y, s*v.x + c*v.y); }
-vec3 runDeform(vec3 p){
-  float side = p.x >= 0.0 ? 1.0 : -1.0;
-  float ax = abs(p.x);
-  float armW = smoothstep(15.0, 23.0, ax) * smoothstep(128.0, 138.0, p.y);
-  if (armW > 0.0) {
-    float elbowW = smoothstep(40.0, 47.0, ax) * armW;
-    vec2 xz = vec2(p.x - side * 44.0, p.z);
-    float armPh = sin(uPhase + (side > 0.0 ? 0.0 : 3.14159));
-    xz = rot2(xz, side * uElbow * (1.0 - 0.25 * armPh) * elbowW);
-    p.x = side * 44.0 + xz.x; p.z = xz.y;
-    vec2 sh = vec2(side * 17.0, 146.0);
-    vec2 r = rot2(p.xy - sh, -side * uArmDown * armW);
-    p.xy = sh + r;
-    float swing = sin(uPhase + (side > 0.0 ? 0.0 : 3.14159)) * uArmAmp * armW;
-    swing *= swing < 0.0 ? 1.2 : 0.8;
-    vec2 yz = rot2(vec2(p.y - 146.0, p.z), swing);
-    p.y = 146.0 + yz.x; p.z = yz.y;
+const CLIPS = {
+  run: { name: 'Running' },
+  idle: { name: 'Walking' },
+  jump: { index: 5, from: 0.3, to: 1.25 },
+  slide: { index: 7, from: 0.12, to: 1.62 },
+} as const
+
+/**
+ * The game moves the runner forward and up itself, so the clips' own root
+ * motion is removed: hips are pinned horizontally and, for the jump, never
+ * rise above standing height (the anticipation crouch and landing dip remain).
+ */
+function stripRootMotion(clip: THREE.AnimationClip, capRise: boolean) {
+  const track = clip.tracks.find((t) => t.name === `${HIPS}.position`)
+  if (!track) return
+  const v = track.values
+  const x0 = v[0]
+  const z0 = v[2]
+  const standY = capRise ? v[1] : Infinity
+  for (let i = 0; i < v.length; i += 3) {
+    v[i] = x0
+    v[i + 2] = z0
+    if (v[i + 1] > standY) v[i + 1] = standY
   }
-  float legW = 1.0 - smoothstep(80.0, 98.0, p.y);
-  if (legW > 0.0) {
-    float s = clamp(p.x / 5.0, -1.0, 1.0) * 0.5 + 0.5;
-    float phR = uPhase + 3.14159;
-    float phL = uPhase;
-    // thighs reach further forward than they extend back, like a real stride
-    float sR = sin(phR); float sL = sin(phL);
-    float aR = sR * uLegAmp * (sR < 0.0 ? 1.2 : 0.8) - uTuck;
-    float aL = sL * uLegAmp * (sL < 0.0 ? 1.2 : 0.8) - uTuck;
-    // knee folds most during the forward swing, with a heel kick as the foot leaves the ground
-    float kR = (max(0.0, -cos(phR)) + max(0.0, sR) * 0.45) * uKnee + 0.08 + uTuck * 1.8;
-    float kL = (max(0.0, -cos(phL)) + max(0.0, sL) * 0.45) * uKnee + 0.08 + uTuck * 1.8;
-    float a = mix(aL, aR, s);
-    float k = mix(kL, kR, s);
-    float kneeW = 1.0 - smoothstep(42.0, 54.0, p.y);
-    vec2 yz = rot2(vec2(p.y - 48.0, p.z), k * kneeW);
-    p.y = 48.0 + yz.x; p.z = yz.y;
-    yz = rot2(vec2(p.y - 90.0, p.z), a * legW);
-    p.y = 90.0 + yz.x; p.z = yz.y;
-  }
-  // pelvis rotates with the leading leg, shoulders counter-rotate, head stays steady
-  float tw = sin(uPhase) * uTwist;
-  float hipW = 1.0 - smoothstep(88.0, 112.0, p.y);
-  float chestW = smoothstep(100.0, 138.0, p.y) * (1.0 - smoothstep(148.0, 166.0, p.y));
-  float twist = tw * hipW - tw * 1.25 * chestW;
-  vec2 txz = rot2(vec2(p.x, p.z), twist);
-  p.x = txz.x; p.z = txz.y;
-  return p;
 }
-`
+
+function subclip(src: THREE.AnimationClip, name: string, from: number, to: number) {
+  const fps = 30
+  return THREE.AnimationUtils.subclip(src, name, Math.round(from * fps), Math.round(to * fps), fps)
+}
 
 export class Player {
   root = new THREE.Group()
@@ -71,16 +47,10 @@ export class Player {
   model: THREE.Object3D | null = null
   shadow: THREE.Mesh
   shieldBubble: THREE.Mesh
-  uniforms = {
-    uPhase: { value: 0 },
-    uLegAmp: { value: 0.75 },
-    uArmAmp: { value: 0.7 },
-    uKnee: { value: 1.3 },
-    uTuck: { value: 0 },
-    uArmDown: { value: 1.3 },
-    uElbow: { value: 1.35 },
-    uTwist: { value: 0.16 },
-  }
+  private mixer: THREE.AnimationMixer | null = null
+  private actions: Partial<Record<Exclude<Motion, 'fall'>, THREE.AnimationAction>> = {}
+  private motion: Motion | null = null
+  private current: THREE.AnimationAction | null = null
 
   constructor(shadowTex: THREE.Texture) {
     this.root.add(this.pivot)
@@ -108,15 +78,16 @@ export class Player {
   }
 
   async load(url: string, onProgress: (p: number) => void) {
-    const loader = new GLTFLoader()
+    const draco = new DRACOLoader().setDecoderPath('/draco/')
+    const loader = new GLTFLoader().setDRACOLoader(draco)
     try {
       const gltf = await loader.loadAsync(url, (e) => {
         if (e.total) onProgress(e.loaded / e.total)
       })
       const model = gltf.scene
+      model.updateMatrixWorld(true)
       const box = new THREE.Box3().setFromObject(model)
-      const height = box.max.y - box.min.y
-      const scale = 1.8 / height
+      const scale = 1.8 / (box.max.y - box.min.y)
       model.scale.setScalar(scale)
       model.position.y = -box.min.y * scale
       model.rotation.y = Math.PI
@@ -125,8 +96,15 @@ export class Player {
         if (!mesh.isMesh) return
         mesh.frustumCulled = false
         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
-        mats.forEach((m) => this.patchMaterial(m))
+        mats.forEach((m) => {
+          const std = m as THREE.MeshStandardMaterial
+          if (std.isMeshStandardMaterial) {
+            std.envMapIntensity = 1
+            std.roughness = Math.max(0.35, std.roughness)
+          }
+        })
       })
+      this.setupAnimations(model, gltf.animations)
       this.model = model
     } catch (err) {
       console.log('[v0] model load failed, using fallback', err)
@@ -138,31 +116,102 @@ export class Player {
       body.position.y = 0.85
       fallback.add(body)
       this.model = fallback
+    } finally {
+      draco.dispose()
     }
     this.pivot.add(this.model)
   }
 
-  private patchMaterial(m: THREE.Material) {
-    const uniforms = this.uniforms
-    m.onBeforeCompile = (shader) => {
-      Object.assign(shader.uniforms, uniforms)
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\n${deformHeader}`)
-        .replace(
-          '#include <beginnormal_vertex>',
-          `vec3 objectNormal = normalize(runDeform(position + normal * 0.6) - runDeform(position));
-#ifdef USE_TANGENT
-  vec3 objectTangent = vec3( tangent.xyz );
-#endif`,
-        )
-        .replace('#include <begin_vertex>', 'vec3 transformed = runDeform(position);')
+  private setupAnimations(model: THREE.Object3D, clips: THREE.AnimationClip[]) {
+    const mixer = new THREE.AnimationMixer(model)
+    const byName = (n: string) => clips.find((c) => c.name === n)
+
+    const run = byName(CLIPS.run.name)?.clone()
+    const idle = byName(CLIPS.idle.name)?.clone()
+    const jumpSrc = clips[CLIPS.jump.index]
+    const slideSrc = clips[CLIPS.slide.index]
+
+    if (run) {
+      stripRootMotion(run, false)
+      this.actions.run = mixer.clipAction(run)
     }
-    m.customProgramCacheKey = () => 'runner-deform'
-    const std = m as THREE.MeshStandardMaterial
-    if (std.isMeshStandardMaterial) {
-      std.envMapIntensity = 1
-      if (std.roughness !== undefined) std.roughness = Math.max(0.35, std.roughness)
+    if (idle) {
+      stripRootMotion(idle, false)
+      this.actions.idle = mixer.clipAction(idle)
     }
-    m.needsUpdate = true
+    if (jumpSrc) {
+      const jump = subclip(jumpSrc, 'Jump', CLIPS.jump.from, CLIPS.jump.to)
+      stripRootMotion(jump, true)
+      const a = mixer.clipAction(jump)
+      a.setLoop(THREE.LoopOnce, 1)
+      a.clampWhenFinished = true
+      this.actions.jump = a
+    }
+    if (slideSrc) {
+      const slide = subclip(slideSrc, 'Slide', CLIPS.slide.from, CLIPS.slide.to)
+      stripRootMotion(slide, false)
+      const a = mixer.clipAction(slide)
+      a.setLoop(THREE.LoopOnce, 1)
+      a.clampWhenFinished = true
+      this.actions.slide = a
+    }
+    this.mixer = mixer
+    this.play('idle')
+  }
+
+  /**
+   * Switch motion with a crossfade. `duration` stretches one-shot clips to the
+   * gameplay window (airtime for jumps, slide time for slides).
+   */
+  play(motion: Motion, opts: { duration?: number; restart?: boolean } = {}) {
+    if (!this.mixer) return
+    if (motion === this.motion && !opts.restart) return
+    // falling into a gap reuses the airborne pose of the jump
+    const key = motion === 'fall' ? 'jump' : motion
+    const next = this.actions[key] ?? this.actions.run
+    if (!next) return
+    this.motion = motion
+
+    next.reset()
+    next.enabled = true
+    next.setEffectiveWeight(1)
+    if (opts.duration && next.loop === THREE.LoopOnce) {
+      next.setEffectiveTimeScale(next.getClip().duration / opts.duration)
+    } else {
+      next.setEffectiveTimeScale(1)
+    }
+    if (motion === 'fall') next.time = next.getClip().duration * 0.55
+
+    const fade = motion === 'jump' || motion === 'slide' ? 0.1 : 0.18
+    if (this.current && this.current !== next) next.crossFadeFrom(this.current, fade, false)
+    else if (!this.current) next.fadeIn(fade)
+    next.play()
+    this.current = next
+  }
+
+  /** Scale the looping cadence (e.g. faster legs at higher speeds). */
+  setLoopSpeed(scale: number) {
+    if (this.current && this.current.loop !== THREE.LoopOnce) this.current.setEffectiveTimeScale(scale)
+  }
+
+  get currentMotion() {
+    return this.motion
+  }
+
+  update(dt: number) {
+    this.mixer?.update(dt)
+  }
+
+  freeze() {
+    if (this.current) this.current.paused = true
+  }
+
+  reset() {
+    this.motion = null
+    if (this.mixer) {
+      this.mixer.stopAllAction()
+      this.current = null
+      this.play('idle')
+    }
   }
 }
