@@ -228,3 +228,90 @@ body {
 .animate-toast {
   animation: toast-pop 1.6s ease-out forwards;
 }
+
+.enter-glow {
+  background:
+    radial-gradient(ellipse at 50% 55%, rgba(229, 9, 20, 0.28), transparent 60%),
+    radial-gradient(ellipse at 50% 100%, rgba(255, 77, 58, 0.18), transparent 55%);
+  animation: enter-breathe 4s ease-in-out infinite;
+}
+@keyframes enter-breathe {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+.enter-lightning {
+  background: radial-gradient(ellipse at 50% 20%, rgba(255, 200, 200, 0.5), transparent 70%);
+  opacity: 0;
+  animation: enter-lightning 7s infinite;
+}
+@keyframes enter-lightning {
+  0%, 60%, 100% { opacity: 0; }
+  61% { opacity: 0.9; }
+  62% { opacity: 0.1; }
+  64% { opacity: 0.7; }
+  70% { opacity: 0; }
+}
+.spore {
+  opacity: 0;
+  animation: spore-rise linear infinite;
+  box-shadow: 0 0 8px rgba(255, 77, 58, 0.8);
+}
+@keyframes spore-rise {
+  0% { transform: translate3d(0, 0, 0); opacity: 0; }
+  15% { opacity: 0.9; }
+  100% { transform: translate3d(24px, -105vh, 0); opacity: 0; }
+}
+.bulb-idle,
+.bulb-spell {
+  display: block;
+  width: 10px;
+  height: 14px;
+  border-radius: 50% 50% 45% 45%;
+  background: var(--bulb);
+  opacity: 0.25;
+}
+.bulb-idle {
+  animation: bulb-idle 4s ease-in-out infinite;
+}
+.bulb-spell {
+  animation: bulb-spell 5.4s infinite;
+}
+@keyframes bulb-idle {
+  0%, 100% { opacity: 0.18; }
+  50% { opacity: 0.4; }
+}
+@keyframes bulb-spell {
+  0%, 4% { opacity: 0.2; box-shadow: none; }
+  8%, 12% { opacity: 1; box-shadow: 0 0 14px 4px var(--bulb); }
+  10% { opacity: 0.4; }
+  14%, 60% { opacity: 1; box-shadow: 0 0 18px 6px var(--bulb); }
+  70%, 100% { opacity: 0.2; box-shadow: none; }
+}
+.letter-spell {
+  color: rgba(255, 255, 255, 0.25);
+  animation: letter-spell 5.4s infinite;
+}
+@keyframes letter-spell {
+  0%, 6% { color: rgba(255, 255, 255, 0.25); text-shadow: none; }
+  14%, 60% { color: #fff; text-shadow: 0 0 10px var(--bulb); }
+  70%, 100% { color: rgba(255, 255, 255, 0.25); text-shadow: none; }
+}
+.enter-title {
+  animation: enter-title 1.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes enter-title {
+  0% { opacity: 0; transform: scale(1.25); filter: blur(10px); }
+  100% { opacity: 1; transform: scale(1); filter: blur(0); }
+}
+@keyframes enter-ring {
+  0% { transform: scale(0.7); opacity: 0.9; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+.enter-ring {
+  animation: enter-ring 1.8s ease-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .enter-glow, .enter-lightning, .spore, .bulb-idle, .bulb-spell, .letter-spell, .enter-title, .enter-ring {
+    animation: none;
+  }
+}
