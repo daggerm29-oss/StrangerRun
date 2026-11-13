@@ -249,6 +249,168 @@ export function makeTileTexture(a: string, b: string, grout: string, checker: bo
   return finish(c, true)
 }
 
+function fitFont(g: CanvasRenderingContext2D, text: string, maxW: number, size: number, family: string) {
+  let s = size
+  g.font = `bold ${s}px ${family}`
+  while (g.measureText(text).width > maxW && s > 10) {
+    s -= 2
+    g.font = `bold ${s}px ${family}`
+  }
+  return s
+}
+
+/** multi-line placard: signs, billboards, warning plates */
+export function makePlacardTexture(lines: string[], bg: string, fg: string, opts: { w?: number; h?: number; wood?: boolean; family?: string } = {}) {
+  const w = opts.w ?? 512
+  const h = opts.h ?? 256
+  const family = opts.family ?? 'Impact, "Arial Black", sans-serif'
+  const { c, g } = canvas(w, h)
+  g.fillStyle = bg
+  g.fillRect(0, 0, w, h)
+  if (opts.wood) {
+    for (let i = 0; i < 6; i++) {
+      g.fillStyle = 'rgba(0,0,0,0.35)'
+      g.fillRect(0, (i * h) / 6, w, 3)
+    }
+    for (let k = 0; k < 90; k++) {
+      g.strokeStyle = `rgba(0,0,0,${Math.random() * 0.25})`
+      g.beginPath()
+      const y = Math.random() * h
+      g.moveTo(0, y)
+      g.lineTo(w, y + Math.random() * 6 - 3)
+      g.stroke()
+    }
+  } else {
+    speckle(g, w, h, 500, 0.12)
+    g.strokeStyle = fg
+    g.lineWidth = 8
+    g.strokeRect(10, 10, w - 20, h - 20)
+  }
+  g.fillStyle = fg
+  g.textAlign = 'center'
+  g.textBaseline = 'middle'
+  const lh = (h - 40) / lines.length
+  lines.forEach((t, i) => {
+    fitFont(g, t, w - 60, Math.min(lh * 0.82, 120), family)
+    g.fillText(t, w / 2, 20 + lh * (i + 0.5) + 2)
+  })
+  return finish(c)
+}
+
+export function makePosterTexture() {
+  const { c, g } = canvas(256, 340)
+  g.fillStyle = '#e6e0cf'
+  g.fillRect(0, 0, 256, 340)
+  for (let i = 0; i < 14; i++) {
+    g.fillStyle = `rgba(120,90,40,${Math.random() * 0.12})`
+    g.beginPath()
+    g.arc(Math.random() * 256, Math.random() * 340, 10 + Math.random() * 40, 0, Math.PI * 2)
+    g.fill()
+  }
+  g.fillStyle = '#141210'
+  g.textAlign = 'center'
+  g.textBaseline = 'middle'
+  fitFont(g, 'MISSING', 220, 64, 'Impact, "Arial Black", sans-serif')
+  g.fillText('MISSING', 128, 44)
+  g.fillStyle = '#7a7670'
+  g.fillRect(58, 82, 140, 150)
+  g.fillStyle = '#3a3834'
+  g.beginPath()
+  g.arc(128, 140, 34, 0, Math.PI * 2)
+  g.fill()
+  g.fillRect(80, 180, 96, 52)
+  g.fillStyle = '#141210'
+  fitFont(g, 'WILL BYERS', 220, 34, 'Impact, "Arial Black", sans-serif')
+  g.fillText('WILL BYERS', 128, 258)
+  g.font = 'bold 15px Arial, sans-serif'
+  g.fillText('LAST SEEN NOV 6 - MIRKWOOD', 128, 286)
+  g.fillText('CALL HAWKINS POLICE', 128, 306)
+  for (let x = 8; x < 256; x += 24) {
+    g.fillStyle = 'rgba(0,0,0,0.35)'
+    g.fillRect(x, 318, 1, 22)
+  }
+  return finish(c)
+}
+
+/** Joyce's living-room wall: floral wallpaper with painted letters */
+export function makeAlphabetTexture() {
+  const { c, g } = canvas(1024, 512)
+  g.fillStyle = '#5a4a32'
+  g.fillRect(0, 0, 1024, 512)
+  for (let y = 0; y < 512; y += 48) {
+    for (let x = (y / 48) % 2 ? 24 : 0; x < 1024; x += 48) {
+      g.fillStyle = 'rgba(160,120,70,0.35)'
+      g.beginPath()
+      g.arc(x, y, 9, 0, Math.PI * 2)
+      g.fill()
+      g.fillStyle = 'rgba(60,80,40,0.35)'
+      g.beginPath()
+      g.ellipse(x + 10, y + 8, 7, 3, 0.6, 0, Math.PI * 2)
+      g.fill()
+    }
+  }
+  speckle(g, 1024, 512, 4000, 0.25)
+  const rows = ['ABCDEFGH', 'IJKLMNOPQ', 'RSTUVWXYZ']
+  g.fillStyle = '#0c0a08'
+  g.textAlign = 'center'
+  g.textBaseline = 'middle'
+  rows.forEach((row, r) => {
+    const n = row.length
+    for (let i = 0; i < n; i++) {
+      g.save()
+      const x = 70 + (i / (n - 1)) * 884
+      const y = 110 + r * 150
+      g.translate(x, y)
+      g.rotate((Math.random() - 0.5) * 0.25)
+      g.font = `bold ${78 + Math.random() * 14}px "Brush Script MT", Georgia, serif`
+      g.fillText(row[i], 0, 0)
+      g.restore()
+    }
+  })
+  return finish(c)
+}
+
+export function makeTowerTexture() {
+  const { c, g } = canvas(1024, 256)
+  g.fillStyle = '#8c9294'
+  g.fillRect(0, 0, 1024, 256)
+  speckle(g, 1024, 256, 3000, 0.25)
+  for (let x = 0; x < 1024; x += 64) {
+    g.fillStyle = 'rgba(0,0,0,0.25)'
+    g.fillRect(x, 0, 2, 256)
+  }
+  for (let i = 0; i < 30; i++) {
+    g.fillStyle = `rgba(90,50,20,${Math.random() * 0.3})`
+    g.fillRect(Math.random() * 1024, Math.random() * 120 + 120, 3 + Math.random() * 4, 40 + Math.random() * 90)
+  }
+  g.fillStyle = '#16181a'
+  g.textAlign = 'center'
+  g.textBaseline = 'middle'
+  g.font = 'bold 120px Impact, "Arial Black", sans-serif'
+  g.fillText('HAWKINS', 256, 132)
+  g.fillText('HAWKINS', 768, 132)
+  return finish(c, true)
+}
+
+export function makeBannerTexture(text: string, from: string, to: string) {
+  const { c, g } = canvas(512, 128)
+  const grd = g.createLinearGradient(0, 0, 512, 0)
+  grd.addColorStop(0, from)
+  grd.addColorStop(1, to)
+  g.fillStyle = grd
+  g.fillRect(0, 0, 512, 128)
+  g.fillStyle = 'rgba(255,255,255,0.15)'
+  for (let i = 0; i < 6; i++) g.fillRect(0, 10 + i * 6, 512, 2)
+  g.fillStyle = '#ffffff'
+  g.textAlign = 'center'
+  g.textBaseline = 'middle'
+  g.shadowColor = '#000000'
+  g.shadowBlur = 8
+  fitFont(g, text, 470, 78, 'Impact, "Arial Black", sans-serif')
+  g.fillText(text, 256, 70)
+  return finish(c)
+}
+
 export function makeSignTexture(text: string, bg: string, fg: string) {
   const { c, g } = canvas(512, 128)
   g.fillStyle = bg
