@@ -27,7 +27,13 @@ Goal: map feels like escaping Hawkins while the Upside Down takes over. Zones by
 - [x] engine: zone change toast banner, Eleven telekinesis power-up, Vecna curse camera wobble, demobat obstacle
 - [x] HUD: show current zone name
 - [x] typecheck passes
-- [ ] browser check of each zone (use window.__runner.simulate / set r.dist), then PR
+- [x] PR opened from `v0/hawkins-zones`
+- [ ] Visual play-test on a real device (sandbox browser has no WebGL). Tune obstacle heights/colours if needed.
+
+## NEXT IDEAS (not started)
+- Branching paths (safe vs shortcut), bike escape set piece, portal jump between zones
+- Junkyard zone (buses to run on top of), quarry cliff path with falling rocks
+- Walkie-talkie power-up revealing upcoming obstacles, Eggo waffles as currency skin
 
 ### Implemented mechanics
 - Zones blend over last 120m (`ZONE_BLEND`) before each 500m boundary; toast banner on entry
