@@ -44,6 +44,7 @@ class MusicPlayer {
   private start(track: Track) {
     const el = new Audio(track.src)
     el.preload = 'auto'
+    el.loop = track.id === 'theme'
     el.volume = 0
     el.addEventListener('ended', () => {
       if (this.current?.el === el) this.playRandom()
@@ -65,24 +66,33 @@ class MusicPlayer {
   }
 
   private playRandom() {
-    const pool = TRACKS.filter((t) => t.id !== this.current?.track.id)
+    const pool = TRACKS.filter((t) => t.id !== 'theme' && t.id !== this.current?.track.id)
     this.start(pool[Math.floor(Math.random() * pool.length)])
   }
 
-  /** Must be called from a user gesture. Starts the Stranger Things theme. */
+  /** Must be called from a user gesture. Starts a random song (never the long theme). */
   enter() {
     if (this.entered) return
     this.entered = true
     this.mood = 'menu'
-    this.start(TRACKS[0])
+    this.playRandom()
   }
 
-  /** Switches to a new random song (never the one already playing) and adjusts volume for the mood. */
+  /** Switches to one of the three songs at random (never the one already playing). */
   shuffle(mood: MusicMood) {
     if (!this.entered) return
     this.mood = mood
     this.ducked = false
     this.playRandom()
+  }
+
+  /** The long Stranger Things theme, looped for the whole run. */
+  playRunTheme() {
+    if (!this.entered) return
+    this.mood = 'run'
+    this.ducked = false
+    if (this.current?.track.id === 'theme') this.refreshVolume()
+    else this.start(TRACKS[0])
   }
 
   setMood(mood: MusicMood) {
